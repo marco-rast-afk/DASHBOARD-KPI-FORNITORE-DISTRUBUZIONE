@@ -26,7 +26,6 @@ COLORI_FILIALI = ["#3b82f6", "#22c55e", "#a855f7", "#f59e0b", "#14b8a6", "#ef444
 LAYOUT_DARK = dict(
     plot_bgcolor="#181c24", paper_bgcolor="#0f1117", font_color="#f1f5f9",
     legend=dict(bgcolor="#1e2330", bordercolor="#2a3045"),
-    margin=dict(l=0, r=0, t=30, b=0),
 )
 
 st.markdown("""
@@ -183,7 +182,7 @@ with tab1:
                 text=[f"{row['media_prod']:.1f}"], textposition="outside",
                 showlegend=False,
             ))
-        fig_prod.update_layout(**LAYOUT_DARK, height=300, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045", title="Media Giornaliera Pezzi per Corriere"))
+        fig_prod.update_layout(**LAYOUT_DARK, height=300, xaxis=dict(gridcolor="#2a3045", margin=dict(l=0, r=0, t=30, b=0)), yaxis=dict(gridcolor="#2a3045", title="Media Giornaliera Pezzi per Corriere"))
         st.plotly_chart(fig_prod, use_container_width=True)
 
         # GRAFICO 2 — LV Ok vs LV Ritiro per filiale (come foto 1 in basso)
@@ -203,7 +202,7 @@ with tab1:
             text=df_riep["tot_lv_rit"].apply(lambda v: fmt_n(v)),
             textposition="outside",
         ))
-        fig_lv.update_layout(**LAYOUT_DARK, barmode="group", height=300, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045"))
+        fig_lv.update_layout(**LAYOUT_DARK, barmode="group", height=300, xaxis=dict(gridcolor="#2a3045", margin=dict(l=0, r=0, t=30, b=0)), yaxis=dict(gridcolor="#2a3045"))
         st.plotly_chart(fig_lv, use_container_width=True)
 
         # TABELLA RIEPILOGATIVA
@@ -256,7 +255,7 @@ with tab2:
                 name="LV Rit", line=dict(color="#a855f7", width=2),
                 mode="lines+markers", marker=dict(size=5),
             ))
-            fig_trend.update_layout(**LAYOUT_DARK, height=280, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045"))
+            fig_trend.update_layout(**LAYOUT_DARK, height=280, xaxis=dict(gridcolor="#2a3045", margin=dict(l=0, r=0, t=30, b=0)), yaxis=dict(gridcolor="#2a3045"))
             st.plotly_chart(fig_trend, use_container_width=True)
 
         # GRAFICO — Produttività media per giro (barre orizzontali)
@@ -271,7 +270,7 @@ with tab2:
                 text=[f"{v['ldv_tot']:.1f}" for _, v in giri_sorted],
                 textposition="outside",
             ))
-            fig_giri.update_layout(**LAYOUT_DARK, height=max(250, len(giri_sorted) * 28), xaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), margin=dict(l=0, r=60, t=20, b=0))
+            fig_giri.update_layout(**LAYOUT_DARK, height=max(250, len(giri_sorted, margin=dict(l=0, r=0, t=30, b=0)) * 28), xaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), margin=dict(l=0, r=60, t=20, b=0))
             st.plotly_chart(fig_giri, use_container_width=True)
 
         # TABELLA GIRI
@@ -328,7 +327,7 @@ with tab3:
                     y=df_f["Prod Media Giorno (LV OK + RIT)"],
                     marker_color=colore_filiale(filiali, fil),
                 ))
-            fig_conf.update_layout(**LAYOUT_DARK, barmode="group", height=320, xaxis=dict(gridcolor="#2a3045", title="Giro"), yaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"))
+            fig_conf.update_layout(**LAYOUT_DARK, barmode="group", height=320, xaxis=dict(gridcolor="#2a3045", title="Giro", margin=dict(l=0, r=0, t=30, b=0)), yaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"))
             st.plotly_chart(fig_conf, use_container_width=True)
 
         st.dataframe(df_tutti_f, use_container_width=True, hide_index=True)
@@ -392,7 +391,7 @@ with tab4:
             x=[r["LV RIT"] for r in righe_giorno],
             name="LV Rit", orientation="h", marker_color="#a855f7",
         ))
-        fig_day.update_layout(**LAYOUT_DARK, barmode="stack", height=max(250, len(righe_giorno) * 30), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), xaxis=dict(gridcolor="#2a3045"), margin=dict(l=0, r=0, t=20, b=0))
+        fig_day.update_layout(**LAYOUT_DARK, barmode="stack", height=max(250, len(righe_giorno, margin=dict(l=0, r=0, t=30, b=0)) * 30), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), xaxis=dict(gridcolor="#2a3045"), margin=dict(l=0, r=0, t=20, b=0))
         st.plotly_chart(fig_day, use_container_width=True)
 
         st.dataframe(pd.DataFrame(righe_giorno), use_container_width=True, hide_index=True)
@@ -434,7 +433,7 @@ with tab5:
             text=[fmt_eur(v) for v in df_tar["fatturato"]],
             textposition="outside",
         ))
-        fig_tar.update_layout(**LAYOUT_DARK, height=300, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045", tickprefix="€ "), margin=dict(l=0, r=0, t=30, b=0))
+        fig_tar.update_layout(**LAYOUT_DARK, height=300, xaxis=dict(gridcolor="#2a3045", margin=dict(l=0, r=0, t=30, b=0)), yaxis=dict(gridcolor="#2a3045", tickprefix="€ "), margin=dict(l=0, r=0, t=30, b=0))
         st.plotly_chart(fig_tar, use_container_width=True)
 
         # GRAFICO — Volume LDV giornaliero
@@ -446,7 +445,7 @@ with tab5:
             text=[fmt_n(v) for v in df_tar["volume"]],
             textposition="outside",
         ))
-        fig_vol.update_layout(**LAYOUT_DARK, height=260, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045", title="LDV"), margin=dict(l=0, r=0, t=20, b=0))
+        fig_vol.update_layout(**LAYOUT_DARK, height=260, xaxis=dict(gridcolor="#2a3045", margin=dict(l=0, r=0, t=30, b=0)), yaxis=dict(gridcolor="#2a3045", title="LDV"), margin=dict(l=0, r=0, t=20, b=0))
         st.plotly_chart(fig_vol, use_container_width=True)
 
         st.markdown("#### Dettaglio giornaliero scaglioni")
