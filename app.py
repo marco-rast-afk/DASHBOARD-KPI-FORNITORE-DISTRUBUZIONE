@@ -24,9 +24,7 @@ st.set_page_config(
 COLORI_FILIALI = ["#3b82f6", "#22c55e", "#a855f7", "#f59e0b", "#14b8a6", "#ef4444", "#ec4899", "#f97316"]
 
 LAYOUT_DARK = dict(
-    
     plot_bgcolor="#181c24", paper_bgcolor="#0f1117", font_color="#f1f5f9",
-    xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045"),
     legend=dict(bgcolor="#1e2330", bordercolor="#2a3045"),
     margin=dict(l=0, r=0, t=30, b=0),
 )
