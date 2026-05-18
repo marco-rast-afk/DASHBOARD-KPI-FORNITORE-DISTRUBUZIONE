@@ -265,10 +265,10 @@ with tab2:
             giri_sorted = sorted(per_giro.items())
             fig_giri = go.Figure(go.Bar(
                 y=[f"Giro {g}" for g, _ in giri_sorted],
-                x=[round(v["prod_giro_corretta"], 1) for _, v in giri_sorted],
+                x=[round(v["ldv_tot"], 1) for _, v in giri_sorted],
                 orientation="h",
                 marker_color=[colore_filiale(filiali, fil_sel)] * len(giri_sorted),
-                text=[f"{v['prod_giro_corretta']:.1f}" for _, v in giri_sorted],
+                text=[f"{v['ldv_tot']:.1f}" for _, v in giri_sorted],
                 textposition="outside",
             ))
             fig_giri.update_layout(**LAYOUT_DARK, height=max(250, len(giri_sorted) * 28), xaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), margin=dict(l=0, r=60, t=20, b=0))
@@ -285,7 +285,7 @@ with tab2:
                 "LV Rit (Media)":                    f"{v['lv_rit']:.1f}",
                 "Stop Ok (Media)":                   f"{v['stop_ok']:.1f}",
                 "Stop Rit (Media)":                  f"{v['stop_rit']:.1f}",
-                "Prod Media Giorno (LV OK + RIT)":   f"{v['prod_giro_corretta']:.1f}",
+                "Prod Media Giorno (LV OK + RIT)":   f"{v['ldv_tot']:.1f}",
             } for g, v in sorted(per_giro.items())]
             st.dataframe(pd.DataFrame(rows_giro), use_container_width=True, hide_index=True)
 
@@ -308,7 +308,7 @@ with tab3:
                     "LV Rit (Media)":                    round(v["lv_rit"],  1),
                     "Stop Ok (Media)":                   round(v["stop_ok"], 1),
                     "Stop Rit (Media)":                  round(v["stop_rit"],1),
-                    "Prod Media Giorno (LV OK + RIT)":   round(v["prod_giro_corretta"], 1),
+                    "Prod Media Giorno (LV OK + RIT)":   round(v["ldv_tot"], 1),
                 })
 
     if righe_tutti:
