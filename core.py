@@ -1,4 +1,10 @@
 # core.py — Logica di calcolo per Dashboard Performance SDA
+#
+# PRODUTTIVITÀ GIORNALIERA:
+#   = somma(LDV OK+RIT colonna R di tutti i giri del giorno) / numero giri presenti
+# MEDIA PRODUTTIVITÀ FILIALE:
+#   = somma(prod_giornaliera) / giorni lavorativi  [SABATI ESCLUSI, weekday != 5]
+
 from datetime import datetime, date
 import pandas as pd
 
@@ -8,8 +14,8 @@ FASCE_DEFAULT = [
     {"da": 50000,   "a": 60000,  "prezzo": 3.050},
 ]
 
-# DIZIONARIO PERSONALIZZATO: Configura qui i 2 scaglioni per ogni filiale.
-# IMPORTANTE: Usa lo stesso identico nome/ID che compare nel file Excel (es. "AP", "ROMA", ecc.)
+# DIZIONARIO PERSONALIZZATO: 2 scaglioni per filiale.
+# Usa lo stesso identico nome/ID che compare nel file Excel (es. "AP", "ROMA", ecc.)
 FASCE_PER_FILIALE = {
     "AP": [
         {"da": 0,     "a": 40000,  "prezzo": 3.250},
@@ -23,16 +29,15 @@ FASCE_PER_FILIALE = {
         {"da": 0,     "a": 55000,  "prezzo": 3.150},
         {"da": 55000, "a": 100000, "prezzo": 2.950},
     ],
-    # Puoi aggiungere tutte le filiali che desideri seguendo questa struttura...
 }
 
 def ottieni_fasce_filiale(id_filiale):
-    """
-    Restituisce le fasce a 2 scaglioni specifiche per la filiale indicata.
-    Se la filiale non è presente nel dizionario personalizzato, restituisce le FASCE_DEFAULT.
-    """
-    filiale_pulita = str(id_filiale).strip()
-    return FASCE_PER_FILIALE.get(filiale_pulita, FASCE_DEFAULT)
+    """Restituisce le fasce specifiche per filiale, o FASCE_DEFAULT se non censita."""
+    return FASCE_PER_FILIALE.get(str(id_filiale).strip(), FASCE_DEFAULT)
+
+def _is_lavorativo(d: date) -> bool:
+    """True se il giorno NON è sabato (weekday 5)."""
+    return d.weekday() != 5
 
 
 def leggi_file_corrieri(path_o_buffer, engine="openpyxl"):
@@ -59,7 +64,8 @@ def leggi_file_corrieri(path_o_buffer, engine="openpyxl"):
             data_key = raw_data.date()
         elif isinstance(raw_data, (int, float)):
             try:
-                data_key = datetime.fromordinal(datetime(1899, 12, 30).toordinal() + int(raw_data)).date()
+                data_key = datetime.fromordinal(
+                    datetime(1899, 12, 30).toordinal() + int(raw_data)).date()
             except Exception:
                 continue
         else:
@@ -72,18 +78,25 @@ def leggi_file_corrieri(path_o_buffer, engine="openpyxl"):
         except (TypeError, ValueError):
             continue
 
-        dati = {
+        lv_ok  = _f(row.get("LV OK"))
+        lv_rit = _f(row.get("LV RIT"))
+        # Colonna R: usa il valore del file; se zero/assente ricalcola
+        ldv_raw = _f(row.get("LDV OK+RIT"))
+        ldv_tot = ldv_raw if ldv_raw > 0 else (lv_ok + lv_rit)
+
+        risultato.setdefault(filiale, {})
+        risultato[filiale].setdefault(data_key, {})
+        risultato[filiale][data_key][giro] = {
             "lv_af":    _f(row.get("LV AFF")),
-            "lv_ok":    _f(row.get("LV OK")),
-            "lv_rit":   _f(row.get("LV RIT")),
+            "lv_ok":    lv_ok,
+            "lv_rit":   lv_rit,
+            "ldv_tot":  ldv_tot,   # LDV OK+RIT colonna R — base produttività
             "stop_ok":  _f(row.get("STOP OK")),
             "stop_rit": _f(row.get("STOP RIT")),
         }
-        risultato.setdefault(filiale, {})
-        risultato[filiale].setdefault(data_key, {})
-        risultato[filiale][data_key][giro] = dati
 
     return risultato
+
 
 def aggrega_filiale(dati_filiale, date_da=None, date_a=None):
     giornate = {
@@ -93,12 +106,23 @@ def aggrega_filiale(dati_filiale, date_da=None, date_a=None):
     if not giornate:
         return None, {}, {}
 
-    n = len(giornate)
-    
-    # Calcolo produttività specifica giorno per giorno per ogni singolo giro
-    for d, giri in giornate.items():
-        for g in giri:
-            giri[g]["prod_specifica_giro"] = giri[g].get("lv_ok", 0.0) + giri[g].get("lv_rit", 0.0)
+    # ── Produttività giornaliera ──────────────────────────────
+    # = somma(ldv_tot tutti i giri del giorno) / numero giri presenti
+    def _prod_giorno(giri):
+        n = len(giri)
+        return sum(v.get("ldv_tot", 0) for v in giri.values()) / n if n > 0 else 0.0
+
+    prod_per_giorno = {d: _prod_giorno(giri) for d, giri in giornate.items()}
+
+    # ── Media produttività: solo giorni lavorativi (sabati esclusi) ──
+    giorni_lav = [d for d in giornate if _is_lavorativo(d)]
+    n_lav = len(giorni_lav)
+    if n_lav > 0:
+        media_prod = sum(prod_per_giorno[d] for d in giorni_lav) / n_lav
+    else:
+        media_prod = sum(prod_per_giorno.values()) / len(giornate)
+
+    n_tot = len(giornate)
 
     def media_per_giro(campo):
         vals = []
@@ -115,20 +139,19 @@ def aggrega_filiale(dati_filiale, date_da=None, date_a=None):
     def totale(campo):
         return sum(r.get(campo, 0) for day in giornate.values() for r in day.values())
 
-    tot_corrieri_giorno = sum(len(day) for day in giornate.values())
-    tot_ok_rit = totale("lv_ok") + totale("lv_rit")
-    media_produttivita_corrieri = tot_ok_rit / tot_corrieri_giorno if tot_corrieri_giorno > 0 else 0.0
-
     agg = {
-        "n_giorni":            n,
+        "n_giorni":            n_lav,          # giorni lavorativi (sabati esclusi)
+        "n_giorni_tot":        n_tot,           # tutti i giorni con dati
+        "media_prod":          media_prod,      # LDV/corriere su gg lavorativi
+        "produttivita_totale": media_prod,      # alias per compatibilità app.py
+        "prod_per_giorno":     prod_per_giorno, # dict data→float per grafici
         "media_lv_af":         media_per_giro("lv_af"),
         "media_lv_ok":         media_per_giro("lv_ok"),
         "media_lv_rit":        media_per_giro("lv_rit"),
-        "media_prod":          media_produttivita_corrieri,  
-        "produttivita_totale": media_produttivita_corrieri,  
         "tot_lv_af":           totale("lv_af"),
-        "tot_lv_ok":           totale("lv_ok"), 
-        "tot_lv_rit":          totale("lv_rit"),     
+        "tot_lv_ok":           totale("lv_ok"),
+        "tot_lv_rit":          totale("lv_rit"),
+        "tot_ldv":             totale("ldv_tot"),  # tot LDV OK+RIT del periodo
         "tot_stop_ok":         totale("stop_ok"),
         "tot_stop_rit":        totale("stop_rit"),
         "media_gg_lv_af":      media_giornaliera("lv_af"),
@@ -148,49 +171,56 @@ def aggrega_filiale(dati_filiale, date_da=None, date_a=None):
             "lv_af":              sum(v["lv_af"]    for v in vals) / n_g,
             "lv_ok":              sum(v["lv_ok"]    for v in vals) / n_g,
             "lv_rit":             sum(v["lv_rit"]   for v in vals) / n_g,
+            "ldv_tot":            sum(v["ldv_tot"]  for v in vals) / n_g,
             "stop_ok":            sum(v["stop_ok"]  for v in vals) / n_g,
             "stop_rit":           sum(v["stop_rit"] for v in vals) / n_g,
-            "prod_giro_corretta": sum(v.get("prod_specifica_giro", 0.0) for v in vals) / n_g,
+            # alias mantenuto per compatibilità con eventuali riferimenti residui
+            "prod_giro_corretta": sum(v["ldv_tot"]  for v in vals) / n_g,
         }
 
     return agg, giornate, per_giro
 
+
 def calcola_tariffa(giornate_filiale, fasce):
     righe = []
     tot_vol = tot_fatt = n_giorni = 0
+
     for d in sorted(giornate_filiale):
         giri_day = giornate_filiale[d]
+        # Volume = ldv_tot (colonna R); fallback lv_ok+lv_rit
+        vol    = sum(v.get("ldv_tot", v.get("lv_ok", 0) + v.get("lv_rit", 0))
+                     for v in giri_day.values())
         lv_ok  = sum(v.get("lv_ok",  0) for v in giri_day.values())
         lv_rit = sum(v.get("lv_rit", 0) for v in giri_day.values())
-        vol    = lv_ok + lv_rit
 
         residuo = float(vol)
         fatt_giorno = 0.0
         dettaglio_parti = []
 
         for idx, fascia in enumerate(fasce):
-            da  = fascia["da"]
-            a   = fascia["a"]
-            prc = fascia["prezzo"]
+            da       = fascia["da"]
+            a        = fascia["a"]
+            prc      = fascia["prezzo"]
             capienza = max(0, a - da)
             if residuo > 0 and capienza > 0:
-                quota = min(residuo, capienza)
-                parz  = quota * prc
+                quota        = min(residuo, capienza)
+                parz         = quota * prc
                 fatt_giorno += parz
                 residuo     -= quota
-                dettaglio_parti.append(f"Sc.{idx+1}: {int(quota):,} x EUR{prc:.3f} = EUR{parz:,.2f}")
+                dettaglio_parti.append(
+                    f"Sc.{idx+1}: {int(quota):,} x EUR{prc:.3f} = EUR{parz:,.2f}")
 
         tot_vol   += vol
         tot_fatt  += fatt_giorno
         n_giorni  += 1
 
         righe.append({
-            "data":         d.strftime("%d/%m/%Y"),
-            "lv_ok":        int(lv_ok),
-            "lv_rit":       int(lv_rit),
-            "volume":       int(vol),
-            "fatturato":    round(fatt_giorno, 2),
-            "dettaglio":    " | ".join(dettaglio_parti) if dettaglio_parti else "nessun LDV",
+            "data":      d.strftime("%d/%m/%Y"),
+            "lv_ok":     int(lv_ok),
+            "lv_rit":    int(lv_rit),
+            "volume":    int(vol),
+            "fatturato": round(fatt_giorno, 2),
+            "dettaglio": " | ".join(dettaglio_parti) if dettaglio_parti else "nessun LDV",
         })
 
     return righe, tot_vol, tot_fatt, (tot_fatt / n_giorni if n_giorni else 0)
