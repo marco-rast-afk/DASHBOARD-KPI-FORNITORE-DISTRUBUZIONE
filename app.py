@@ -135,7 +135,7 @@ with st.sidebar:
                 import requests, io
                 r = requests.get(GDRIVE_URL, timeout=30)
                 r.raise_for_status()
-                st.session_state.dati = leggi_file_corrieri(io.BytesIO(r.content))
+                st.session_state.dati = leggi_file_corrieri(io.BytesIO(r.content),engine="openpyxl")
                 st.success(f"✅ Dati aggiornati — {len(st.session_state.dati)} filiali")
             except Exception as e:
                 st.error(f"Impossibile scaricare da Drive: {e}")

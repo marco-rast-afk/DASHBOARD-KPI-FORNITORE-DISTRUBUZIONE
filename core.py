@@ -15,13 +15,13 @@ FASCE_DEFAULT = [
 ]
 
 
-def leggi_file_corrieri(path_o_buffer):
+def leggi_file_corrieri(path_o_buffer, engine="openpyxl"):
     """
     Legge Performance_Corrieri.xlsx.
     Accetta sia un path su disco sia un buffer (es. file caricato da Streamlit).
     Restituisce dict: {filiale: {data: {giro: {...}}}}
     """
-    df = pd.read_excel(path_o_buffer, header=5)
+    df = pd.read_excel(path_o_buffer, header=5, engine=engine)
     df = df.dropna(subset=["id_filiale"])
     df["id_filiale"] = df["id_filiale"].astype(str).str.strip()
     df = df[df["id_filiale"].str.strip() != ""]
