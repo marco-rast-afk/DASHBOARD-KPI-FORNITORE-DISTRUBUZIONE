@@ -60,7 +60,7 @@ def colore_filiale(filiali: list, nome: str) -> str:
     except ValueError:
         return "#3b82f6"
 
-GDRIVE_FILE_ID = "151L_nfX6dhCgzlPJ9grl2j8ghLrdqHWO"
+GDRIVE_FILE_ID = "12iiOzb1er1AaJXjILGlzyQJbeDLOurKu"
 GDRIVE_URL = f"https://docs.google.com/spreadsheets/d/{GDRIVE_FILE_ID}/export?format=xlsx"
 
 if "dati" not in st.session_state: st.session_state.dati = None
