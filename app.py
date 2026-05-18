@@ -22,6 +22,7 @@ from core import (
     aggrega_filiale,
     calcola_tariffa,
     FASCE_DEFAULT,
+    ottieni_fasce_filiale,  # Importata la funzione per le tariffe specifiche
 )
 
 # ─────────────────────────────────────────────────────────────
@@ -90,10 +91,9 @@ def colore_filiale(filiali: list, nome: str) -> str:
         return "#3b82f6"
 
 
-def prod_color(v: float) -> str:
-    """Colore per produttività assoluta (LDV OK+RIT per giorno/giro)."""
-    if v >= 120:  return "#22c55e"
-    if v >= 80:   return "#f59e0b"
+def prod_color(p: float) -> str:
+    if p >= 0.95:   return "#22c55e"
+    if p >= 0.85:   return "#f59e0b"
     return "#ef4444"
 
 
@@ -129,16 +129,14 @@ with st.sidebar:
                 st.success(f"✅ {len(st.session_state.dati)} filiali caricate")
             except Exception as e:
                 st.error(f"Errore lettura file: {e}")
+
     elif st.session_state.dati is None:
-        # Carica automaticamente da Google Drive
-        with st.spinner("⏳ Caricamento dati da Google Drive..."):
+        with st.spinner("Caricamento dati da Google Drive..."):
             try:
-                import requests
+                import requests, io
                 r = requests.get(GDRIVE_URL, timeout=30)
                 r.raise_for_status()
-                st.session_state.dati = leggi_file_corrieri(
-                    io.BytesIO(r.content), engine="openpyxl"
-                )
+                st.session_state.dati = leggi_file_corrieri(io.BytesIO(r.content), engine="openpyxl")
                 st.success(f"✅ Dati aggiornati — {len(st.session_state.dati)} filiali")
             except Exception as e:
                 st.error(f"Impossibile scaricare da Drive: {e}")
@@ -233,36 +231,41 @@ with tab1:
     tot_af  = sum(r["tot_lv_af"]  for r in riepilogo)
     tot_ok  = sum(r["tot_lv_ok"]  for r in riepilogo)
     tot_rit = sum(r["tot_lv_rit"] for r in riepilogo)
-    tot_ldv = sum(r["tot_ldv"]    for r in riepilogo)
+    
+    # Calcolo corretto della produttività globale media basata sulle nuove logiche feriali per filiale
+    prod_g  = sum(r["produttivita_totale"] for r in riepilogo) / len(riepilogo) if riepilogo else 0
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: kpi_card("Filiali attive",   str(len(riepilogo)),  "#3b82f6")
-    with c2: kpi_card("Tot LV Affidate",  fmt_n(tot_af),        "#3b82f6")
-    with c3: kpi_card("Tot LV Ok",        fmt_n(tot_ok),        "#22c55e")
-    with c4: kpi_card("Tot LV Ritiro",    fmt_n(tot_rit),       "#a855f7")
-    with c5: kpi_card("Tot LDV (Prod.)",  fmt_n(tot_ldv),       "#f59e0b")
+    with c1: kpi_card("Filiali attive",   str(len(riepilogo)),        "#3b82f6")
+    with c2: kpi_card("Tot LV Affidate",  fmt_n(tot_af),              "#3b82f6")
+    with c3: kpi_card("Tot LV Ok",        fmt_n(tot_ok),              "#22c55e")
+    with c4: kpi_card("Tot LV Ritiro",    fmt_n(tot_rit),             "#a855f7")
+    with c5: kpi_card("Produttività %",   f"{prod_g:.1%}",            prod_color(prod_g))
 
     st.markdown("---")
 
-    # GRAFICO CONFRONTO FILIALI — produttività
+    # GRAFICO CONFRONTO FILIALI — produttività feriale al netto del weekend
     st.markdown("#### Produttività per Filiale")
     df_riep = pd.DataFrame(riepilogo)
+    df_riep["prod_pct"] = df_riep["produttivita_totale"] * 100 # Scala a percentuale 0-100 per il grafico
     fig_prod = go.Figure()
     for i, row in df_riep.iterrows():
         col = colore_filiale(filiali, row["filiale"])
         fig_prod.add_trace(go.Bar(
             x=[row["filiale"]],
-            y=[round(row["media_prod"], 0)],
+            y=[round(row["prod_pct"], 1)],
             marker_color=col,
             name=row["filiale"],
-            text=[fmt_n(row["media_prod"])],
+            text=[f"{row['prod_pct']:.1f}%"],
             textposition="outside",
             showlegend=False,
         ))
+    fig_prod.add_hline(y=95, line_dash="dash", line_color="#22c55e",
+                       annotation_text="Target 95%", annotation_position="top right")
     fig_prod.update_layout(
         plot_bgcolor="#181c24", paper_bgcolor="#0f1117",
         font_color="#f1f5f9", height=320,
-        yaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"),
+        yaxis=dict(range=[0, 110], ticksuffix="%", gridcolor="#2a3045"),
         xaxis=dict(gridcolor="#2a3045"),
         margin=dict(l=0, r=0, t=10, b=0),
     )
@@ -296,18 +299,17 @@ with tab1:
     st.markdown("#### Tabella Riepilogativa")
     df_tab = df_riep[[
         "filiale", "n_giorni", "tot_lv_af", "tot_lv_ok",
-        "tot_lv_rit", "tot_ldv", "media_gg_lv_ok", "media_prod"
+        "tot_lv_rit", "media_gg_lv_ok", "produttivita_totale"
     ]].copy()
     df_tab.columns = [
         "Filiale", "Giorni", "Tot LV AF", "Tot LV Ok",
-        "Tot LV Rit", "Tot LDV", "Media LV Ok/gg", "Prod. (LDV/gg)"
+        "Tot LV Rit", "Media LV Ok/gg", "Prod %"
     ]
-    df_tab["Tot LV AF"]       = df_tab["Tot LV AF"].apply(fmt_n)
-    df_tab["Tot LV Ok"]       = df_tab["Tot LV Ok"].apply(fmt_n)
-    df_tab["Tot LV Rit"]      = df_tab["Tot LV Rit"].apply(fmt_n)
-    df_tab["Tot LDV"]         = df_tab["Tot LDV"].apply(fmt_n)
-    df_tab["Media LV Ok/gg"]  = df_tab["Media LV Ok/gg"].apply(lambda x: f"{x:.0f}")
-    df_tab["Prod. (LDV/gg)"]  = df_tab["Prod. (LDV/gg)"].apply(lambda x: f"{x:.0f}")
+    df_tab["Tot LV AF"]      = df_tab["Tot LV AF"].apply(lambda x: fmt_n(x))
+    df_tab["Tot LV Ok"]      = df_tab["Tot LV Ok"].apply(lambda x: fmt_n(x))
+    df_tab["Tot LV Rit"]     = df_tab["Tot LV Rit"].apply(lambda x: fmt_n(x))
+    df_tab["Media LV Ok/gg"] = df_tab["Media LV Ok/gg"].apply(lambda x: f"{x:.0f}")
+    df_tab["Prod %"]         = df_tab["Prod %"].apply(lambda x: f"{x:.1%}")
     st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
 
@@ -325,14 +327,14 @@ with tab2:
     else:
         col = colore_filiale(filiali, fil_sel)
 
-        # KPI FILIALE
-        c1,c2,c3,c4,c5,c6 = st.columns(6)
+        # KPI FILIALE (Mette in mostra la nuova produttività feriale corretta)
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
         with c1: kpi_card("Giorni",         str(agg["n_giorni"]),              "#94a3b8")
         with c2: kpi_card("Media LV AF/gg", f"{agg['media_gg_lv_af']:.0f}",   "#3b82f6")
         with c3: kpi_card("Media LV Ok/gg", f"{agg['media_gg_lv_ok']:.0f}",   "#22c55e")
-        with c4: kpi_card("Media LV Rit/gg",f"{agg['media_gg_lv_rit']:.0f}",  "#a855f7")
+        with c4: kpi_card("Media LV Rit/gg", f"{agg['media_gg_lv_rit']:.0f}",  "#a855f7")
         with c5: kpi_card("Tot LV AF",      fmt_n(agg["tot_lv_af"]),           "#3b82f6")
-        with c6: kpi_card("Prod. LDV/gg",  fmt_n(agg['media_prod']),            prod_color(agg['media_prod']))
+        with c6: kpi_card("Produttività",   f"{agg['produttivita_totale']:.1%}", prod_color(agg["produttivita_totale"]))
 
         st.markdown("---")
 
@@ -340,11 +342,14 @@ with tab2:
         st.markdown("#### Andamento giornaliero LV Ok")
         giorni_data = []
         for d in sorted(giornate):
-            lv_ok_d  = sum(v["lv_ok"]   for v in giornate[d].values())
-            lv_rit_d = sum(v["lv_rit"]  for v in giornate[d].values())
-            ldv_d    = sum(v["ldv_tot"] for v in giornate[d].values())
-            giorni_data.append({"data": d, "lv_ok": lv_ok_d,
-                                "lv_rit": lv_rit_d, "ldv_tot": ldv_d})
+            lv_ok_d  = sum(v["lv_ok"]  for v in giornate[d].values())
+            lv_rit_d = sum(v["lv_rit"] for v in giornate[d].values())
+            
+            # Utilizza il calcolo puro della produttività giornaliera estratto da core.py
+            giri_del_giorno = list(giornate[d].values())
+            prod_d = giri_del_giorno[0].get("prod_giornaliera", 0.0) if giri_del_giorno else 0.0
+            
+            giorni_data.append({"data": d, "lv_ok": lv_ok_d, "lv_rit": lv_rit_d, "prod": prod_d})
         df_giorni = pd.DataFrame(giorni_data)
 
         fig_trend = go.Figure()
@@ -372,13 +377,13 @@ with tab2:
         if per_giro:
             rows_giro = [{
                 "Giro":      g,
-                "Giorni":       v["n"],
-                "LV AF":        f"{v['lv_af']:.0f}",
-                "LV Ok":        f"{v['lv_ok']:.0f}",
-                "LV Rit":       f"{v['lv_rit']:.0f}",
-                "Stop Ok":      f"{v['stop_ok']:.0f}",
-                "Stop Rit":     f"{v['stop_rit']:.0f}",
-                "Prod. (LDV)":  f"{v['ldv_tot']:.0f}",
+                "Giorni":    v["n"],
+                "LV AF":     f"{v['lv_af']:.0f}",
+                "LV Ok":     f"{v['lv_ok']:.0f}",
+                "LV Rit":    f"{v['lv_rit']:.0f}",
+                "Stop Ok":   f"{v['stop_ok']:.0f}",
+                "Stop Rit":  f"{v['stop_rit']:.0f}",
+                "Prod Corrieri (Media)": f"{v.get('prod_giornaliera', 0.0):.1f} ldv/corr",
             } for g, v in sorted(per_giro.items())]
             st.dataframe(pd.DataFrame(rows_giro),
                          use_container_width=True, hide_index=True)
@@ -393,18 +398,19 @@ with tab3:
     righe_tutti = []
     for fil in filiali:
         _, _, pg = aggrega_filiale(dati[fil], date_da, date_a)
-        for giro, v in sorted(pg.items()):
-            righe_tutti.append({
-                "Filiale":      fil,
-                "Giro":         giro,
-                "Giorni":       v["n"],
-                "LV AF":        round(v["lv_af"],   1),
-                "LV Ok":        round(v["lv_ok"],   1),
-                "LV Rit":       round(v["lv_rit"],  1),
-                "Stop Ok":      round(v["stop_ok"], 1),
-                "Stop Rit":     round(v["stop_rit"],1),
-                "Prod. (LDV)":  round(v["ldv_tot"], 1),
-            })
+        if pg:
+            for giro, v in sorted(pg.items()):
+                righe_tutti.append({
+                    "Filiale":   fil,
+                    "Giro":      giro,
+                    "Giorni":    v["n"],
+                    "LV AF":     round(v["lv_af"],   1),
+                    "LV Ok":     round(v["lv_ok"],   1),
+                    "LV Rit":    round(v["lv_rit"],  1),
+                    "Stop Ok":   round(v["stop_ok"], 1),
+                    "Stop Rit":  round(v["stop_rit"], 1),
+                    "Prod Media Giorno": round(v.get("prod_giornaliera", 0.0), 1),
+                })
 
     if righe_tutti:
         df_tutti = pd.DataFrame(righe_tutti)
@@ -456,31 +462,33 @@ with tab4:
 
         st.markdown(f"#### {fil_g} — {giorno_sel.strftime('%d/%m/%Y')}")
 
-        # KPI giornata
+        # KPI giornata basati sulla formula richiesta: (LDV OK + RIT) / Numero Corrieri
         lv_af_g  = sum(v["lv_af"]    for v in giri_giorno.values())
         lv_ok_g  = sum(v["lv_ok"]    for v in giri_giorno.values())
         lv_rit_g = sum(v["lv_rit"]   for v in giri_giorno.values())
-        ldv_g    = sum(v["ldv_tot"]  for v in giri_giorno.values())
         stop_ok  = sum(v["stop_ok"]  for v in giri_giorno.values())
         stop_rit = sum(v["stop_rit"] for v in giri_giorno.values())
+        
+        n_corr_g = len(giri_giorno)
+        prod_giornaliera_val = (lv_ok_g + lv_rit_g) / n_corr_g if n_corr_g > 0 else 0.0
 
-        c1,c2,c3,c4,c5 = st.columns(5)
-        with c1: kpi_card("LV Affidate",  fmt_n(lv_af_g),  "#3b82f6")
-        with c2: kpi_card("LV Ok",        fmt_n(lv_ok_g),  "#22c55e")
-        with c3: kpi_card("LV Ritiro",    fmt_n(lv_rit_g), "#a855f7")
-        with c4: kpi_card("Stop Ok",      fmt_n(stop_ok),  "#14b8a6")
-        with c5: kpi_card("Prod. (LDV)",  fmt_n(ldv_g),    prod_color(ldv_g))
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1: kpi_card("LV Affidate", fmt_n(lv_af_g),   "#3b82f6")
+        with c2: kpi_card("LV Ok",       fmt_n(lv_ok_g),   "#22c55e")
+        with c3: kpi_card("LV Ritiro",   fmt_n(lv_rit_g),  "#a855f7")
+        with c4: kpi_card("Stop Ok",     fmt_n(stop_ok),   "#14b8a6")
+        with c5: kpi_card("Prod. Giornaliera", f"{prod_giornaliera_val:.1f} ldv/corr", "#f59e0b")
 
         st.markdown("---")
 
         rows_g = [{
-            "Giro":        giro,
-            "LV AF":       int(v["lv_af"]),
-            "LV Ok":       int(v["lv_ok"]),
-            "LV Rit":      int(v["lv_rit"]),
-            "Stop Ok":     int(v["stop_ok"]),
-            "Stop Rit":    int(v["stop_rit"]),
-            "Prod. (LDV)": int(v["ldv_tot"]),
+            "Giro":     giro,
+            "LV AF":    int(v["lv_af"]),
+            "LV Ok":    int(v["lv_ok"]),
+            "LV Rit":   int(v["lv_rit"]),
+            "Stop Ok":  int(v["stop_ok"]),
+            "Stop Rit": int(v["stop_rit"]),
+            "Prod. Giro (LDV Tot)": int(v["lv_ok"] + v["lv_rit"]),
         } for giro, v in sorted(giri_giorno.items())]
         st.dataframe(pd.DataFrame(rows_g),
                      use_container_width=True, hide_index=True)
@@ -520,40 +528,42 @@ with tab5:
     with col_fil:
         fil_tar = st.selectbox("Filiale", filiali, key="sel_fil_tar")
 
-    # EDITOR SCAGLIONI
-    with st.expander("⚙ Modifica scaglioni tariffa", expanded=False):
-        st.caption("Modifica i valori e premi **Applica** per ricalcolare.")
+    # Recupera in automatico i 2 scaglioni specifici impostati in core.py per la filiale selezionata
+    fasce_filiale_attiva = ottieni_fasce_filiale(fil_tar)
+
+    # EDITOR SCAGLIONI VIRTUALI (Inizializzato con i dati reali della filiale corrente)
+    with st.expander("⚙ Modifica / Ispeziona scaglioni di questa filiale", expanded=False):
+        st.caption("Visualizza o modifica temporaneamente gli scaglioni della filiale corrente.")
         fasce_edit = []
         cols_head = st.columns([2, 2, 2, 1])
         cols_head[0].markdown("**Da (LDV)**")
         cols_head[1].markdown("**A (LDV)**")
         cols_head[2].markdown("**Prezzo €/LDV**")
 
-        for i, fascia in enumerate(fasce):
+        for i, fascia in enumerate(fasce_filiale_attiva):
             c1, c2, c3, _ = st.columns([2, 2, 2, 1])
             da  = c1.number_input("", value=int(fascia["da"]),   step=1000,
-                                   key=f"da_{i}",  label_visibility="collapsed")
+                                   key=f"da_{fil_tar}_{i}",  label_visibility="collapsed")
             a   = c2.number_input("", value=int(fascia["a"]),    step=1000,
-                                   key=f"a_{i}",   label_visibility="collapsed")
+                                   key=f"a_{fil_tar}_{i}",   label_visibility="collapsed")
             prc = c3.number_input("", value=float(fascia["prezzo"]), step=0.001,
-                                   format="%.3f", key=f"prc_{i}",
+                                   format="%.3f", key=f"prc_{fil_tar}_{i}",
                                    label_visibility="collapsed")
             fasce_edit.append({"da": int(da), "a": int(a), "prezzo": float(prc)})
 
-        if st.button("✅ Applica scaglioni"):
-            st.session_state.fasce = fasce_edit
-            fasce = fasce_edit
-            st.success("Scaglioni aggiornati.")
-            st.rerun()
+        if st.button("✅ Applica scaglioni temporanei"):
+            fasce_filiale_attiva = fasce_edit
+            st.success("Scaglioni applicati per questa sessione.")
 
     st.markdown("---")
 
-    # CALCOLO
+    # CALCOLO TARIFFA EFFETTIVO
     if fil_tar in dati:
         _, giornate_tar, _ = aggrega_filiale(dati[fil_tar], date_da, date_a)
         if giornate_tar:
+            # Calcola la tariffa usando l'array a 2 scaglioni nativo e personalizzato della filiale
             righe_tar, tot_vol, tot_fatt, media_gg = calcola_tariffa(
-                giornate_tar, st.session_state.fasce
+                giornate_tar, fasce_filiale_attiva
             )
 
             # KPI TARIFFA
