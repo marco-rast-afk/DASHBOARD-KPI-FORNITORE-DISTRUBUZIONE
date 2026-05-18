@@ -271,7 +271,8 @@ with tab2:
                 text=[f"{v['ldv_tot']:.1f}" for _, v in giri_sorted],
                 textposition="outside",
             ))
-            fig_giri.update_layout(**LAYOUT_DARK, height=max(250, len(giri_sorted) * 28), xaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), margin=dict(l=0, r=60, t=20, b=0))
+            fig_giri.update_layout(**LAYOUT_DARK, height=max(250, len(giri_sorted) * 28), xaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"), yaxis=dict(gridcolor="#2a3045", autorange="reversed"))
+            fig_giri.update_layout(margin=dict(l=0, r=60, t=20, b=0))
             st.plotly_chart(fig_giri, use_container_width=True)
 
         # TABELLA GIRI
@@ -392,7 +393,8 @@ with tab4:
             x=[r["LV RIT"] for r in righe_giorno],
             name="LV Rit", orientation="h", marker_color="#a855f7",
         ))
-        fig_day.update_layout(**LAYOUT_DARK, barmode="stack", height=max(250, len(righe_giorno) * 30), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), xaxis=dict(gridcolor="#2a3045"), margin=dict(l=0, r=0, t=20, b=0))
+        fig_day.update_layout(**LAYOUT_DARK, barmode="stack", height=max(250, len(righe_giorno) * 30), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), xaxis=dict(gridcolor="#2a3045"))
+        fig_day.update_layout(margin=dict(l=0, r=0, t=20, b=0))
         st.plotly_chart(fig_day, use_container_width=True)
 
         st.dataframe(pd.DataFrame(righe_giorno), use_container_width=True, hide_index=True)
@@ -434,7 +436,8 @@ with tab5:
             text=[fmt_eur(v) for v in df_tar["fatturato"]],
             textposition="outside",
         ))
-        fig_tar.update_layout(**LAYOUT_DARK, height=300, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045", tickprefix="€ "), margin=dict(l=0, r=0, t=30, b=0))
+        fig_tar.update_layout(**LAYOUT_DARK, height=300, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045", tickprefix="€ "))
+        fig_tar.update_layout(margin=dict(l=0, r=0, t=30, b=0))
         st.plotly_chart(fig_tar, use_container_width=True)
 
         # GRAFICO — Volume LDV giornaliero
@@ -446,7 +449,8 @@ with tab5:
             text=[fmt_n(v) for v in df_tar["volume"]],
             textposition="outside",
         ))
-        fig_vol.update_layout(**LAYOUT_DARK, height=260, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045", title="LDV"), margin=dict(l=0, r=0, t=20, b=0))
+        fig_vol.update_layout(**LAYOUT_DARK, height=260, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045", title="LDV"))
+        fig_vol.update_layout(margin=dict(l=0, r=0, t=20, b=0))
         st.plotly_chart(fig_vol, use_container_width=True)
 
         st.markdown("#### Dettaglio giornaliero scaglioni")
