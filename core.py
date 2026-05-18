@@ -1,11 +1,39 @@
-# core.py — Logica di calcolo estratta da dashboard_performance_SDA_v3.pyw
-import pandas as pd
+# core.py — Logica di calcolo per Dashboard Performance SDA
 from datetime import datetime, date
+import pandas as pd
 
+# Fasce di ripiego se la filiale non è censita nel dizionario personalizzato
 FASCE_DEFAULT = [
     {"da": 0,       "a": 50000,  "prezzo": 3.190},
     {"da": 50000,   "a": 60000,  "prezzo": 3.050},
 ]
+
+# DIZIONARIO PERSONALIZZATO: Configura qui i 2 scaglioni per ogni filiale.
+# IMPORTANTE: Usa lo stesso identico nome/ID che compare nel file Excel (es. "AP", "ROMA", ecc.)
+FASCE_PER_FILIALE = {
+    "AP": [
+        {"da": 0,     "a": 40000,  "prezzo": 3.250},
+        {"da": 40000, "a": 80000,  "prezzo": 3.100},
+    ],
+    "AV": [
+        {"da": 0,     "a": 45000,  "prezzo": 3.300},
+        {"da": 45000, "a": 90000,  "prezzo": 3.150},
+    ],
+    "FG": [
+        {"da": 0,     "a": 55000,  "prezzo": 3.150},
+        {"da": 55000, "a": 100000, "prezzo": 2.950},
+    ],
+    # Puoi aggiungere tutte le filiali che desideri seguendo questa struttura...
+}
+
+def ottieni_fasce_filiale(id_filiale):
+    """
+    Restituisce le fasce a 2 scaglioni specifiche per la filiale indicata.
+    Se la filiale non è presente nel dizionario personalizzato, restituisce le FASCE_DEFAULT.
+    """
+    filiale_pulita = str(id_filiale).strip()
+    return FASCE_PER_FILIALE.get(filiale_pulita, FASCE_DEFAULT)
+
 
 def leggi_file_corrieri(path_o_buffer, engine="openpyxl"):
     df = pd.read_excel(path_o_buffer, header=5, engine=engine)
@@ -66,20 +94,11 @@ def aggrega_filiale(dati_filiale, date_da=None, date_a=None):
         return None, {}, {}
 
     n = len(giornate)
-    prod_giornaliere_filiale = {}
+    
+    # Calcolo produttività specifica giorno per giorno per ogni singolo giro
     for d, giri in giornate.items():
-        tot_ldv_giorno = sum(v.get("lv_ok", 0) + v.get("lv_rit", 0) for v in giri.values())
-        n_corrieri = len(giri)
-        prod_giornaliere_filiale[d] = tot_ldv_giorno / n_corrieri if n_corrieri > 0 else 0.0
-        
         for g in giri:
             giri[g]["prod_specifica_giro"] = giri[g].get("lv_ok", 0.0) + giri[g].get("lv_rit", 0.0)
-
-    giorni_feriali = [d for d in giornate if d.weekday() < 5]
-    if giorni_feriali:
-        produttivita_totale = sum(prod_giornaliere_filiale[d] for d in giorni_feriali) / len(giorni_feriali)
-    else:
-        produttivita_totale = 0.0
 
     def media_per_giro(campo):
         vals = []
@@ -96,13 +115,17 @@ def aggrega_filiale(dati_filiale, date_da=None, date_a=None):
     def totale(campo):
         return sum(r.get(campo, 0) for day in giornate.values() for r in day.values())
 
+    tot_corrieri_giorno = sum(len(day) for day in giornate.values())
+    tot_ok_rit = totale("lv_ok") + totale("lv_rit")
+    media_produttivita_corrieri = tot_ok_rit / tot_corrieri_giorno if tot_corrieri_giorno > 0 else 0.0
+
     agg = {
         "n_giorni":            n,
         "media_lv_af":         media_per_giro("lv_af"),
         "media_lv_ok":         media_per_giro("lv_ok"),
         "media_lv_rit":        media_per_giro("lv_rit"),
-        "media_prod":          produttivita_totale,  
-        "produttivita_totale": produttivita_totale,  
+        "media_prod":          media_produttivita_corrieri,  
+        "produttivita_totale": media_produttivita_corrieri,  
         "tot_lv_af":           totale("lv_af"),
         "tot_lv_ok":           totale("lv_ok"), 
         "tot_lv_rit":          totale("lv_rit"),     
