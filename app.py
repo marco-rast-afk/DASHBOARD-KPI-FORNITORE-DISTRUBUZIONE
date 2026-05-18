@@ -11,7 +11,7 @@ from core import (
     aggrega_filiale,
     calcola_tariffa,
     FASCE_DEFAULT,
-    ottieni_fasce_filiale, # Importazione della nuova funzione di controllo tariffe
+    ottieni_fasce_filiale,
 )
 
 st.set_page_config(
@@ -22,6 +22,13 @@ st.set_page_config(
 )
 
 COLORI_FILIALI = ["#3b82f6", "#22c55e", "#a855f7", "#f59e0b", "#14b8a6", "#ef4444", "#ec4899", "#f97316"]
+
+LAYOUT_DARK = dict(
+    plot_bgcolor="#181c24", paper_bgcolor="#0f1117", font_color="#f1f5f9",
+    xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045"),
+    legend=dict(bgcolor="#1e2330", bordercolor="#2a3045"),
+    margin=dict(l=0, r=0, t=30, b=0),
+)
 
 st.markdown("""
 <style>
@@ -60,12 +67,13 @@ def colore_filiale(filiali: list, nome: str) -> str:
     except ValueError:
         return "#3b82f6"
 
+# ── GOOGLE DRIVE ──────────────────────────────────────────────
 GDRIVE_FILE_ID = "12iiOzb1er1AaJXjILGlzyQJbeDLOurKu"
 GDRIVE_URL = f"https://docs.google.com/spreadsheets/d/{GDRIVE_FILE_ID}/export?format=xlsx"
 
-if "dati" not in st.session_state: st.session_state.dati = None
+if "dati"    not in st.session_state: st.session_state.dati    = None
 if "date_da" not in st.session_state: st.session_state.date_da = None
-if "date_a" not in st.session_state: st.session_state.date_a = None
+if "date_a"  not in st.session_state: st.session_state.date_a  = None
 
 with st.sidebar:
     st.markdown("## 📦 Dashboard Performance")
@@ -101,7 +109,6 @@ with st.sidebar:
                 date_a = st.date_input("Al", value=tutte_date[-1], min_value=tutte_date[0], max_value=tutte_date[-1])
             st.session_state.date_da = date_da
             st.session_state.date_a  = date_a
-
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("Oggi"):
@@ -122,10 +129,10 @@ if not st.session_state.dati:
     st.info("👈 Carica il file Performance_Corrieri.xlsx dalla barra laterale per iniziare.")
     st.stop()
 
-dati = st.session_state.dati
+dati    = st.session_state.dati
 filiali = sorted(dati.keys())
 date_da = st.session_state.date_da
-date_a = st.session_state.date_a
+date_a  = st.session_state.date_a
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Panoramica",
@@ -135,7 +142,9 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "💶 Tariffa",
 ])
 
-# TAB 1: PANORAMICA
+# ══════════════════════════════════════════════════════════════
+# TAB 1 — PANORAMICA
+# ══════════════════════════════════════════════════════════════
 with tab1:
     st.markdown("### Panoramica Multi-Filiale")
     riepilogo = []
@@ -143,44 +152,65 @@ with tab1:
         agg, _, _ = aggrega_filiale(dati[fil], date_da, date_a)
         if agg:
             riepilogo.append({"filiale": fil, **agg})
-    
+
     if riepilogo:
         df_riep = pd.DataFrame(riepilogo)
         tot_af  = df_riep["tot_lv_af"].sum()
         tot_ok  = df_riep["tot_lv_ok"].sum()
         tot_rit = df_riep["tot_lv_rit"].sum()
-        
-        tot_giri_giorni = sum(sum(len(giri) for d, giri in dati[f].items() if (date_da is None or d >= date_da) and (date_a is None or d <= date_a)) for f in filiali)
+        tot_giri_giorni = sum(
+            sum(len(giri) for d, giri in dati[f].items()
+                if (date_da is None or d >= date_da) and (date_a is None or d <= date_a))
+            for f in filiali)
         prod_complessiva_media = (tot_ok + tot_rit) / tot_giri_giorni if tot_giri_giorni > 0 else 0.0
 
         c1, c2, c3, c4, c5 = st.columns(5)
-        with c1: kpi_card("Filiali attive",   str(len(riepilogo)),        "#3b82f6")
-        with c2: kpi_card("Tot LV Affidate",  fmt_n(tot_af),              "#3b82f6")
-        with c3: kpi_card("Tot LV Ok",        fmt_n(tot_ok),              "#22c55e")
-        with c4: kpi_card("Tot LV Ritiro",    fmt_n(tot_rit),             "#a855f7")
-        with c5: kpi_card("Prod. Media Corrieri", f"{prod_complessiva_media:.1f}", "#f59e0b")
+        with c1: kpi_card("Filiali attive",       str(len(riepilogo)),             "#3b82f6")
+        with c2: kpi_card("Tot LV Affidate",       fmt_n(tot_af),                  "#3b82f6")
+        with c3: kpi_card("Tot LV Ok",             fmt_n(tot_ok),                  "#22c55e")
+        with c4: kpi_card("Tot LV Ritiro",         fmt_n(tot_rit),                 "#a855f7")
+        with c5: kpi_card("Prod. Media Corrieri",  f"{prod_complessiva_media:.1f}", "#f59e0b")
 
         st.markdown("---")
-        st.markdown("#### Produttività Media Corrieri per Filiale")
+
+        # GRAFICO 1 — Produttività LDV OK+RIT per filiale
+        st.markdown("#### Produttività Media Corrieri (LDV OK+RIT) per Filiale")
         fig_prod = go.Figure()
         for i, row in df_riep.iterrows():
             col = colore_filiale(filiali, row["filiale"])
             fig_prod.add_trace(go.Bar(
-                x=[row["filiale"]],
-                y=[round(row["media_prod"], 1)],
-                marker_color=col,
-                name=row["filiale"],
-                text=[f"{row['media_prod']:.1f}"],
-                textposition="outside",
+                x=[row["filiale"]], y=[round(row["media_prod"], 1)],
+                marker_color=col, name=row["filiale"],
+                text=[f"{row['media_prod']:.1f}"], textposition="outside",
                 showlegend=False,
             ))
         fig_prod.update_layout(
-            plot_bgcolor="#181c24", paper_bgcolor="#0f1117", font_color="#f1f5f9", height=300,
+            **LAYOUT_DARK, height=300,
             yaxis=dict(gridcolor="#2a3045", title="Media Giornaliera Pezzi per Corriere"),
-            margin=dict(l=0, r=0, t=20, b=0),
         )
         st.plotly_chart(fig_prod, use_container_width=True)
 
+        # GRAFICO 2 — LV Ok vs LV Ritiro per filiale (come foto 1 in basso)
+        st.markdown("#### LV Ok vs LV Ritiro per Filiale")
+        fig_lv = go.Figure()
+        fig_lv.add_trace(go.Bar(
+            name="LV Ok",
+            x=df_riep["filiale"], y=df_riep["tot_lv_ok"],
+            marker_color="#22c55e",
+            text=df_riep["tot_lv_ok"].apply(lambda v: fmt_n(v)),
+            textposition="outside",
+        ))
+        fig_lv.add_trace(go.Bar(
+            name="LV Ritiro",
+            x=df_riep["filiale"], y=df_riep["tot_lv_rit"],
+            marker_color="#a855f7",
+            text=df_riep["tot_lv_rit"].apply(lambda v: fmt_n(v)),
+            textposition="outside",
+        ))
+        fig_lv.update_layout(**LAYOUT_DARK, barmode="group", height=300)
+        st.plotly_chart(fig_lv, use_container_width=True)
+
+        # TABELLA RIEPILOGATIVA
         st.markdown("#### Tabella Riepilogativa Filiali")
         df_tab = df_riep[["filiale", "n_giorni", "tot_lv_af", "tot_lv_ok", "tot_lv_rit", "media_prod"]].copy()
         df_tab.columns = ["Filiale", "Giorni Periodo", "Tot LV AF", "Tot LV Ok", "Tot LV Rit", "Prod. Media Corriere"]
@@ -190,7 +220,9 @@ with tab1:
         df_tab["Prod. Media Corriere"] = df_tab["Prod. Media Corriere"].apply(lambda x: f"{x:.1f}")
         st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
-# TAB 2: DETTAGLIO FILIALE
+# ══════════════════════════════════════════════════════════════
+# TAB 2 — DETTAGLIO FILIALE
+# ══════════════════════════════════════════════════════════════
 with tab2:
     st.markdown("### Dettaglio Singola Filiale")
     fil_sel = st.selectbox("Seleziona filiale", filiali, key="sel_fil")
@@ -198,28 +230,78 @@ with tab2:
 
     if agg:
         c1, c2, c3, c4, c5 = st.columns(5)
-        with c1: kpi_card("Giorni Attivi",   str(agg["n_giorni"]),        "#94a3b8")
-        with c2: kpi_card("Tot LV Affidate", fmt_n(agg["tot_lv_af"]),     "#3b82f6")
-        with c3: kpi_card("Tot LV Ok",       fmt_n(agg["tot_lv_ok"]),     "#22c55e")
-        with c4: kpi_card("Tot LV Rit",      fmt_n(agg["tot_lv_rit"]),    "#a855f7")
-        with c5: kpi_card("Prod. Media Corrieri", f"{agg['media_prod']:.1f}", "#f59e0b")
+        with c1: kpi_card("Giorni Attivi",        str(agg["n_giorni"]),        "#94a3b8")
+        with c2: kpi_card("Tot LV Affidate",       fmt_n(agg["tot_lv_af"]),    "#3b82f6")
+        with c3: kpi_card("Tot LV Ok",             fmt_n(agg["tot_lv_ok"]),    "#22c55e")
+        with c4: kpi_card("Tot LV Rit",            fmt_n(agg["tot_lv_rit"]),   "#a855f7")
+        with c5: kpi_card("Prod. Media Corrieri",  f"{agg['media_prod']:.1f}", "#f59e0b")
 
         st.markdown("---")
+
+        # GRAFICO — Andamento giornaliero LV Ok e LV Rit (come foto 2)
+        st.markdown("#### Andamento Giornaliero LV Ok e LV Ritiro")
+        giorni_data = []
+        for d in sorted(giornate):
+            lv_ok_d  = sum(v["lv_ok"]  for v in giornate[d].values())
+            lv_rit_d = sum(v["lv_rit"] for v in giornate[d].values())
+            giorni_data.append({"data": d, "lv_ok": lv_ok_d, "lv_rit": lv_rit_d})
+        df_giorni = pd.DataFrame(giorni_data)
+
+        if not df_giorni.empty:
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Scatter(
+                x=df_giorni["data"], y=df_giorni["lv_ok"],
+                name="LV Ok", line=dict(color="#22c55e", width=2),
+                fill="tozeroy", fillcolor="rgba(34,197,94,0.1)",
+                mode="lines+markers", marker=dict(size=5),
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=df_giorni["data"], y=df_giorni["lv_rit"],
+                name="LV Rit", line=dict(color="#a855f7", width=2),
+                mode="lines+markers", marker=dict(size=5),
+            ))
+            fig_trend.update_layout(**LAYOUT_DARK, height=280)
+            st.plotly_chart(fig_trend, use_container_width=True)
+
+        # GRAFICO — Produttività media per giro (barre orizzontali)
+        st.markdown("#### Produttività Media per Giro (LDV OK+RIT)")
+        if per_giro:
+            giri_sorted = sorted(per_giro.items())
+            fig_giri = go.Figure(go.Bar(
+                y=[f"Giro {g}" for g, _ in giri_sorted],
+                x=[round(v["prod_giro_corretta"], 1) for _, v in giri_sorted],
+                orientation="h",
+                marker_color=[colore_filiale(filiali, fil_sel)] * len(giri_sorted),
+                text=[f"{v['prod_giro_corretta']:.1f}" for _, v in giri_sorted],
+                textposition="outside",
+            ))
+            fig_giri.update_layout(
+                **LAYOUT_DARK,
+                height=max(250, len(giri_sorted) * 28),
+                xaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"),
+                yaxis=dict(gridcolor="#2a3045", autorange="reversed"),
+                margin=dict(l=0, r=60, t=20, b=0),
+            )
+            st.plotly_chart(fig_giri, use_container_width=True)
+
+        # TABELLA GIRI
         st.markdown("#### Rendimento dei singoli Giri (Medie Giornaliere del Periodo)")
         if per_giro:
             rows_giro = [{
-                "Giro":      g,
-                "Giorni Presenza": v["n"],
-                "LV AF (Media)":  f"{v['lv_af']:.1f}",
-                "LV Ok (Media)":  f"{v['lv_ok']:.1f}",
-                "LV Rit (Media)": f"{v['lv_rit']:.1f}",
-                "Stop Ok (Media)": f"{v['stop_ok']:.1f}",
-                "Stop Rit (Media)": f"{v['stop_rit']:.1f}",
-                "Prod Media Giorno (LV OK + RIT)": f"{v['prod_giro_corretta']:.1f}",
+                "Giro":                              g,
+                "Giorni Presenza":                   v["n"],
+                "LV AF (Media)":                     f"{v['lv_af']:.1f}",
+                "LV Ok (Media)":                     f"{v['lv_ok']:.1f}",
+                "LV Rit (Media)":                    f"{v['lv_rit']:.1f}",
+                "Stop Ok (Media)":                   f"{v['stop_ok']:.1f}",
+                "Stop Rit (Media)":                  f"{v['stop_rit']:.1f}",
+                "Prod Media Giorno (LV OK + RIT)":   f"{v['prod_giro_corretta']:.1f}",
             } for g, v in sorted(per_giro.items())]
             st.dataframe(pd.DataFrame(rows_giro), use_container_width=True, hide_index=True)
 
-# TAB 3: TUTTI I GIRI
+# ══════════════════════════════════════════════════════════════
+# TAB 3 — TUTTI I GIRI
+# ══════════════════════════════════════════════════════════════
 with tab3:
     st.markdown("### Elenco Completo Multi-Filiale di tutti i Giri")
     righe_tutti = []
@@ -228,71 +310,174 @@ with tab3:
         if pg:
             for giro, v in sorted(pg.items()):
                 righe_tutti.append({
-                    "Filiale":   fil,
-                    "Giro":      giro,
-                    "Giorni":    v["n"],
-                    "LV AF (Media)":     round(v["lv_af"], 1),
-                    "LV Ok (Media)":     round(v["lv_ok"], 1),
-                    "LV Rit (Media)":    round(v["lv_rit"], 1),
-                    "Stop Ok (Media)":   round(v["stop_ok"], 1),
-                    "Stop Rit (Media)":  round(v["stop_rit"], 1),
-                    "Prod Media Giorno (LV OK + RIT)": round(v["prod_giro_corretta"], 1),
+                    "Filiale":                           fil,
+                    "Giro":                              giro,
+                    "Giorni":                            v["n"],
+                    "LV AF (Media)":                     round(v["lv_af"],   1),
+                    "LV Ok (Media)":                     round(v["lv_ok"],   1),
+                    "LV Rit (Media)":                    round(v["lv_rit"],  1),
+                    "Stop Ok (Media)":                   round(v["stop_ok"], 1),
+                    "Stop Rit (Media)":                  round(v["stop_rit"],1),
+                    "Prod Media Giorno (LV OK + RIT)":   round(v["prod_giro_corretta"], 1),
                 })
+
     if righe_tutti:
         df_tutti = pd.DataFrame(righe_tutti)
         fil_filter = st.multiselect("Filtra per filiale", filiali, default=filiali, key="filter_tutti")
-        df_tutti = df_tutti[df_tutti["Filiale"].isin(fil_filter)]
-        st.dataframe(df_tutti, use_container_width=True, hide_index=True)
+        df_tutti_f = df_tutti[df_tutti["Filiale"].isin(fil_filter)]
 
-# TAB 4: GIORNALIERO
+        # GRAFICO — Confronto produttività per giro tra filiali selezionate
+        if not df_tutti_f.empty and len(fil_filter) > 0:
+            st.markdown("#### Confronto Produttività per Giro tra Filiali")
+            fig_conf = go.Figure()
+            for fil in fil_filter:
+                df_f = df_tutti_f[df_tutti_f["Filiale"] == fil]
+                fig_conf.add_trace(go.Bar(
+                    name=fil,
+                    x=df_f["Giro"].astype(str),
+                    y=df_f["Prod Media Giorno (LV OK + RIT)"],
+                    marker_color=colore_filiale(filiali, fil),
+                ))
+            fig_conf.update_layout(
+                **LAYOUT_DARK, barmode="group", height=320,
+                xaxis=dict(gridcolor="#2a3045", title="Giro"),
+                yaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"),
+            )
+            st.plotly_chart(fig_conf, use_container_width=True)
+
+        st.dataframe(df_tutti_f, use_container_width=True, hide_index=True)
+
+        # Download CSV
+        csv = df_tutti_f.to_csv(index=False, sep=";").encode("utf-8-sig")
+        st.download_button("⬇ Scarica CSV", data=csv,
+                           file_name="tutti_giri.csv", mime="text/csv")
+
+# ══════════════════════════════════════════════════════════════
+# TAB 4 — GIORNALIERO
+# ══════════════════════════════════════════════════════════════
 with tab4:
     st.markdown("### Dettaglio Giornaliero per Filiale")
     fil_giorno = st.selectbox("Seleziona filiale", filiali, key="fil_giorno")
     _, giornate_g, _ = aggrega_filiale(dati[fil_giorno], date_da, date_a)
-    
+
     if giornate_g:
-        date_sel = st.selectbox("Seleziona data", sorted(giornate_g.keys(), reverse=True))
+        date_sel = st.selectbox("Seleziona data", sorted(giornate_g.keys(), reverse=True),
+                                format_func=lambda d: d.strftime("%d/%m/%Y"))
         giri_day = giornate_g[date_sel]
-        
+
+        # KPI giornata
+        lv_af_g  = sum(v.get("lv_af",  0) for v in giri_day.values())
+        lv_ok_g  = sum(v.get("lv_ok",  0) for v in giri_day.values())
+        lv_rit_g = sum(v.get("lv_rit", 0) for v in giri_day.values())
+        stop_ok  = sum(v.get("stop_ok",0) for v in giri_day.values())
+        prod_tot = sum(v.get("prod_specifica_giro", 0) for v in giri_day.values())
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1: kpi_card("LV Affidate",    fmt_n(lv_af_g),   "#3b82f6")
+        with c2: kpi_card("LV Ok",          fmt_n(lv_ok_g),   "#22c55e")
+        with c3: kpi_card("LV Ritiro",      fmt_n(lv_rit_g),  "#a855f7")
+        with c4: kpi_card("Stop Ok",        fmt_n(stop_ok),   "#14b8a6")
+        with c5: kpi_card("Prod. (LDV)",    fmt_n(prod_tot),  "#f59e0b")
+
+        st.markdown("---")
+
         righe_giorno = []
         for g, v in sorted(giri_day.items()):
             righe_giorno.append({
-                "Giro": g,
-                "LV AFF": int(v.get("lv_af", 0)),
-                "LV OK": int(v.get("lv_ok", 0)),
-                "LV RIT": int(v.get("lv_rit", 0)),
-                "STOP OK": int(v.get("stop_ok", 0)),
-                "STOP RIT": int(v.get("stop_rit", 0)),
-                "Produttività (LV OK + RIT)": int(v.get("prod_specifica_giro", 0)),
+                "Giro":                          g,
+                "LV AFF":                        int(v.get("lv_af",  0)),
+                "LV OK":                         int(v.get("lv_ok",  0)),
+                "LV RIT":                        int(v.get("lv_rit", 0)),
+                "STOP OK":                       int(v.get("stop_ok",0)),
+                "STOP RIT":                      int(v.get("stop_rit",0)),
+                "Produttività (LV OK + RIT)":    int(v.get("prod_specifica_giro", 0)),
             })
+
+        # GRAFICO — Barre orizzontali LV Ok + Rit per giro (come foto 3)
+        st.markdown("#### LV Ok e LV Ritiro per Giro")
+        fig_day = go.Figure()
+        fig_day.add_trace(go.Bar(
+            y=[f"Giro {r['Giro']}" for r in righe_giorno],
+            x=[r["LV OK"] for r in righe_giorno],
+            name="LV Ok", orientation="h", marker_color="#22c55e",
+        ))
+        fig_day.add_trace(go.Bar(
+            y=[f"Giro {r['Giro']}" for r in righe_giorno],
+            x=[r["LV RIT"] for r in righe_giorno],
+            name="LV Rit", orientation="h", marker_color="#a855f7",
+        ))
+        fig_day.update_layout(
+            **LAYOUT_DARK, barmode="stack",
+            height=max(250, len(righe_giorno) * 30),
+            yaxis=dict(gridcolor="#2a3045", autorange="reversed"),
+            xaxis=dict(gridcolor="#2a3045"),
+            margin=dict(l=0, r=0, t=20, b=0),
+        )
+        st.plotly_chart(fig_day, use_container_width=True)
+
         st.dataframe(pd.DataFrame(righe_giorno), use_container_width=True, hide_index=True)
     else:
         st.warning("Nessun dato disponibile nel periodo selezionato.")
 
-# TAB 5: TARIFFA
+# ══════════════════════════════════════════════════════════════
+# TAB 5 — TARIFFA
+# ══════════════════════════════════════════════════════════════
 with tab5:
     st.markdown("### Calcolo Fatturato a Scaglioni Progressivi")
     fil_tar = st.selectbox("Seleziona filiale per tariffazione", filiali, key="fil_tar")
     _, giornate_t, _ = aggrega_filiale(dati[fil_tar], date_da, date_a)
-    
+
     if giornate_t:
-        # Recupera dinamicamente dal file core i 2 scaglioni specifici di QUESTA filiale
         fasce_attive = ottieni_fasce_filiale(fil_tar)
-        
-        # Mostra le tariffe applicate correnti dentro un piccolo menu informativo espandibile
+
         with st.expander(f"Ispeziona scaglioni attivi per la filiale: {fil_tar}", expanded=False):
             for idx, f in enumerate(fasce_attive):
                 st.write(f"Scaglione {idx+1} ➔ Da: {f['da']} a {f['a']} LDV | Tariffa: € {f['prezzo']:.3f}")
-        
+
         righe_tar, tot_v, tot_f, med_f = calcola_tariffa(giornate_t, fasce_attive)
-        
-        c1, c2, c3 = st.columns(3)
-        with c1: kpi_card("Volume Totale (LV OK + RIT)", fmt_n(tot_v), "#3b82f6")
-        with c2: kpi_card("Fatturato Totale Stimato", fmt_eur(tot_f), "#22c55e")
-        with c3: kpi_card("Fatturato Medio / Giorno", fmt_eur(med_f), "#a855f7")
-        
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: kpi_card("Giorni",                   str(len(righe_tar)),  "#94a3b8")
+        with c2: kpi_card("Volume Totale (LV OK+RIT)", fmt_n(tot_v),        "#3b82f6")
+        with c3: kpi_card("Fatturato Totale Stimato",  fmt_eur(tot_f),      "#22c55e")
+        with c4: kpi_card("Fatturato Medio / Giorno",  fmt_eur(med_f),      "#a855f7")
+
         st.markdown("---")
+
+        # GRAFICO — Fatturato giornaliero (come foto 4)
+        st.markdown("#### Fatturato Giornaliero")
+        df_tar = pd.DataFrame(righe_tar)
+        fig_tar = go.Figure(go.Bar(
+            x=df_tar["data"],
+            y=df_tar["fatturato"],
+            marker_color="#22c55e",
+            text=[fmt_eur(v) for v in df_tar["fatturato"]],
+            textposition="outside",
+        ))
+        fig_tar.update_layout(
+            **LAYOUT_DARK, height=300,
+            yaxis=dict(gridcolor="#2a3045", tickprefix="€ "),
+            margin=dict(l=0, r=0, t=30, b=0),
+        )
+        st.plotly_chart(fig_tar, use_container_width=True)
+
+        # GRAFICO — Volume LDV giornaliero
+        st.markdown("#### Volume LDV (OK+RIT) Giornaliero")
+        fig_vol = go.Figure(go.Bar(
+            x=df_tar["data"],
+            y=df_tar["volume"],
+            marker_color="#3b82f6",
+            text=[fmt_n(v) for v in df_tar["volume"]],
+            textposition="outside",
+        ))
+        fig_vol.update_layout(
+            **LAYOUT_DARK, height=260,
+            yaxis=dict(gridcolor="#2a3045", title="LDV"),
+            margin=dict(l=0, r=0, t=20, b=0),
+        )
+        st.plotly_chart(fig_vol, use_container_width=True)
+
         st.markdown("#### Dettaglio giornaliero scaglioni")
-        st.dataframe(pd.DataFrame(righe_tar), use_container_width=True, hide_index=True)
+        st.dataframe(df_tar, use_container_width=True, hide_index=True)
     else:
         st.warning("Nessun dato disponibile nel periodo selezionato.")
