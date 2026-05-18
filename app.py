@@ -90,9 +90,10 @@ def colore_filiale(filiali: list, nome: str) -> str:
         return "#3b82f6"
 
 
-def prod_color(p: float) -> str:
-    if p >= 0.95:   return "#22c55e"
-    if p >= 0.85:   return "#f59e0b"
+def prod_color(v: float) -> str:
+    """Colore per produttività assoluta (LDV OK+RIT per giorno/giro)."""
+    if v >= 120:  return "#22c55e"
+    if v >= 80:   return "#f59e0b"
     return "#ef4444"
 
 
@@ -232,40 +233,36 @@ with tab1:
     tot_af  = sum(r["tot_lv_af"]  for r in riepilogo)
     tot_ok  = sum(r["tot_lv_ok"]  for r in riepilogo)
     tot_rit = sum(r["tot_lv_rit"] for r in riepilogo)
-    prod_g  = tot_ok / tot_af if tot_af > 0 else 0
+    tot_ldv = sum(r["tot_ldv"]    for r in riepilogo)
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: kpi_card("Filiali attive",   str(len(riepilogo)),        "#3b82f6")
-    with c2: kpi_card("Tot LV Affidate",  fmt_n(tot_af),              "#3b82f6")
-    with c3: kpi_card("Tot LV Ok",        fmt_n(tot_ok),              "#22c55e")
-    with c4: kpi_card("Tot LV Ritiro",    fmt_n(tot_rit),             "#a855f7")
-    with c5: kpi_card("Produttività %",   f"{prod_g:.1%}",            prod_color(prod_g))
+    with c1: kpi_card("Filiali attive",   str(len(riepilogo)),  "#3b82f6")
+    with c2: kpi_card("Tot LV Affidate",  fmt_n(tot_af),        "#3b82f6")
+    with c3: kpi_card("Tot LV Ok",        fmt_n(tot_ok),        "#22c55e")
+    with c4: kpi_card("Tot LV Ritiro",    fmt_n(tot_rit),       "#a855f7")
+    with c5: kpi_card("Tot LDV (Prod.)",  fmt_n(tot_ldv),       "#f59e0b")
 
     st.markdown("---")
 
     # GRAFICO CONFRONTO FILIALI — produttività
     st.markdown("#### Produttività per Filiale")
     df_riep = pd.DataFrame(riepilogo)
-    df_riep["prod_pct"] = df_riep["media_prod"] * 100
-
     fig_prod = go.Figure()
     for i, row in df_riep.iterrows():
         col = colore_filiale(filiali, row["filiale"])
         fig_prod.add_trace(go.Bar(
             x=[row["filiale"]],
-            y=[round(row["prod_pct"], 1)],
+            y=[round(row["media_prod"], 0)],
             marker_color=col,
             name=row["filiale"],
-            text=[f"{row['prod_pct']:.1f}%"],
+            text=[fmt_n(row["media_prod"])],
             textposition="outside",
             showlegend=False,
         ))
-    fig_prod.add_hline(y=95, line_dash="dash", line_color="#22c55e",
-                       annotation_text="Target 95%", annotation_position="top right")
     fig_prod.update_layout(
         plot_bgcolor="#181c24", paper_bgcolor="#0f1117",
         font_color="#f1f5f9", height=320,
-        yaxis=dict(range=[0, 110], ticksuffix="%", gridcolor="#2a3045"),
+        yaxis=dict(gridcolor="#2a3045", title="LDV OK+RIT medi/giorno"),
         xaxis=dict(gridcolor="#2a3045"),
         margin=dict(l=0, r=0, t=10, b=0),
     )
@@ -299,17 +296,18 @@ with tab1:
     st.markdown("#### Tabella Riepilogativa")
     df_tab = df_riep[[
         "filiale", "n_giorni", "tot_lv_af", "tot_lv_ok",
-        "tot_lv_rit", "media_gg_lv_ok", "media_prod"
+        "tot_lv_rit", "tot_ldv", "media_gg_lv_ok", "media_prod"
     ]].copy()
     df_tab.columns = [
         "Filiale", "Giorni", "Tot LV AF", "Tot LV Ok",
-        "Tot LV Rit", "Media LV Ok/gg", "Prod %"
+        "Tot LV Rit", "Tot LDV", "Media LV Ok/gg", "Prod. (LDV/gg)"
     ]
-    df_tab["Tot LV AF"]      = df_tab["Tot LV AF"].apply(lambda x: fmt_n(x))
-    df_tab["Tot LV Ok"]      = df_tab["Tot LV Ok"].apply(lambda x: fmt_n(x))
-    df_tab["Tot LV Rit"]     = df_tab["Tot LV Rit"].apply(lambda x: fmt_n(x))
-    df_tab["Media LV Ok/gg"] = df_tab["Media LV Ok/gg"].apply(lambda x: f"{x:.0f}")
-    df_tab["Prod %"]         = df_tab["Prod %"].apply(lambda x: f"{x:.1%}")
+    df_tab["Tot LV AF"]       = df_tab["Tot LV AF"].apply(fmt_n)
+    df_tab["Tot LV Ok"]       = df_tab["Tot LV Ok"].apply(fmt_n)
+    df_tab["Tot LV Rit"]      = df_tab["Tot LV Rit"].apply(fmt_n)
+    df_tab["Tot LDV"]         = df_tab["Tot LDV"].apply(fmt_n)
+    df_tab["Media LV Ok/gg"]  = df_tab["Media LV Ok/gg"].apply(lambda x: f"{x:.0f}")
+    df_tab["Prod. (LDV/gg)"]  = df_tab["Prod. (LDV/gg)"].apply(lambda x: f"{x:.0f}")
     st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
 
@@ -334,7 +332,7 @@ with tab2:
         with c3: kpi_card("Media LV Ok/gg", f"{agg['media_gg_lv_ok']:.0f}",   "#22c55e")
         with c4: kpi_card("Media LV Rit/gg",f"{agg['media_gg_lv_rit']:.0f}",  "#a855f7")
         with c5: kpi_card("Tot LV AF",      fmt_n(agg["tot_lv_af"]),           "#3b82f6")
-        with c6: kpi_card("Produttività",   f"{agg['media_prod']:.1%}",        prod_color(agg["media_prod"]))
+        with c6: kpi_card("Prod. LDV/gg",  fmt_n(agg['media_prod']),            prod_color(agg['media_prod']))
 
         st.markdown("---")
 
@@ -342,12 +340,11 @@ with tab2:
         st.markdown("#### Andamento giornaliero LV Ok")
         giorni_data = []
         for d in sorted(giornate):
-            lv_ok_d  = sum(v["lv_ok"]  for v in giornate[d].values())
-            lv_rit_d = sum(v["lv_rit"] for v in giornate[d].values())
-            prod_d   = sum(v["lv_ok"] for v in giornate[d].values()) / \
-                       max(sum(v["lv_af"] for v in giornate[d].values()), 1)
+            lv_ok_d  = sum(v["lv_ok"]   for v in giornate[d].values())
+            lv_rit_d = sum(v["lv_rit"]  for v in giornate[d].values())
+            ldv_d    = sum(v["ldv_tot"] for v in giornate[d].values())
             giorni_data.append({"data": d, "lv_ok": lv_ok_d,
-                                "lv_rit": lv_rit_d, "prod": prod_d})
+                                "lv_rit": lv_rit_d, "ldv_tot": ldv_d})
         df_giorni = pd.DataFrame(giorni_data)
 
         fig_trend = go.Figure()
@@ -375,13 +372,13 @@ with tab2:
         if per_giro:
             rows_giro = [{
                 "Giro":      g,
-                "Giorni":    v["n"],
-                "LV AF":     f"{v['lv_af']:.0f}",
-                "LV Ok":     f"{v['lv_ok']:.0f}",
-                "LV Rit":    f"{v['lv_rit']:.0f}",
-                "Stop Ok":   f"{v['stop_ok']:.0f}",
-                "Stop Rit":  f"{v['stop_rit']:.0f}",
-                "Prod %":    f"{v['prod']:.1%}",
+                "Giorni":       v["n"],
+                "LV AF":        f"{v['lv_af']:.0f}",
+                "LV Ok":        f"{v['lv_ok']:.0f}",
+                "LV Rit":       f"{v['lv_rit']:.0f}",
+                "Stop Ok":      f"{v['stop_ok']:.0f}",
+                "Stop Rit":     f"{v['stop_rit']:.0f}",
+                "Prod. (LDV)":  f"{v['ldv_tot']:.0f}",
             } for g, v in sorted(per_giro.items())]
             st.dataframe(pd.DataFrame(rows_giro),
                          use_container_width=True, hide_index=True)
@@ -398,15 +395,15 @@ with tab3:
         _, _, pg = aggrega_filiale(dati[fil], date_da, date_a)
         for giro, v in sorted(pg.items()):
             righe_tutti.append({
-                "Filiale":   fil,
-                "Giro":      giro,
-                "Giorni":    v["n"],
-                "LV AF":     round(v["lv_af"],   1),
-                "LV Ok":     round(v["lv_ok"],   1),
-                "LV Rit":    round(v["lv_rit"],  1),
-                "Stop Ok":   round(v["stop_ok"], 1),
-                "Stop Rit":  round(v["stop_rit"],1),
-                "Prod %":    f"{v['prod']:.1%}",
+                "Filiale":      fil,
+                "Giro":         giro,
+                "Giorni":       v["n"],
+                "LV AF":        round(v["lv_af"],   1),
+                "LV Ok":        round(v["lv_ok"],   1),
+                "LV Rit":       round(v["lv_rit"],  1),
+                "Stop Ok":      round(v["stop_ok"], 1),
+                "Stop Rit":     round(v["stop_rit"],1),
+                "Prod. (LDV)":  round(v["ldv_tot"], 1),
             })
 
     if righe_tutti:
@@ -463,27 +460,27 @@ with tab4:
         lv_af_g  = sum(v["lv_af"]    for v in giri_giorno.values())
         lv_ok_g  = sum(v["lv_ok"]    for v in giri_giorno.values())
         lv_rit_g = sum(v["lv_rit"]   for v in giri_giorno.values())
+        ldv_g    = sum(v["ldv_tot"]  for v in giri_giorno.values())
         stop_ok  = sum(v["stop_ok"]  for v in giri_giorno.values())
         stop_rit = sum(v["stop_rit"] for v in giri_giorno.values())
-        prod_g2  = lv_ok_g / lv_af_g if lv_af_g > 0 else 0
 
         c1,c2,c3,c4,c5 = st.columns(5)
-        with c1: kpi_card("LV Affidate", fmt_n(lv_af_g),   "#3b82f6")
-        with c2: kpi_card("LV Ok",       fmt_n(lv_ok_g),   "#22c55e")
-        with c3: kpi_card("LV Ritiro",   fmt_n(lv_rit_g),  "#a855f7")
-        with c4: kpi_card("Stop Ok",     fmt_n(stop_ok),   "#14b8a6")
-        with c5: kpi_card("Prod %",      f"{prod_g2:.1%}", prod_color(prod_g2))
+        with c1: kpi_card("LV Affidate",  fmt_n(lv_af_g),  "#3b82f6")
+        with c2: kpi_card("LV Ok",        fmt_n(lv_ok_g),  "#22c55e")
+        with c3: kpi_card("LV Ritiro",    fmt_n(lv_rit_g), "#a855f7")
+        with c4: kpi_card("Stop Ok",      fmt_n(stop_ok),  "#14b8a6")
+        with c5: kpi_card("Prod. (LDV)",  fmt_n(ldv_g),    prod_color(ldv_g))
 
         st.markdown("---")
 
         rows_g = [{
-            "Giro":     giro,
-            "LV AF":    int(v["lv_af"]),
-            "LV Ok":    int(v["lv_ok"]),
-            "LV Rit":   int(v["lv_rit"]),
-            "Stop Ok":  int(v["stop_ok"]),
-            "Stop Rit": int(v["stop_rit"]),
-            "Prod %":   f"{v['prod']:.1%}",
+            "Giro":        giro,
+            "LV AF":       int(v["lv_af"]),
+            "LV Ok":       int(v["lv_ok"]),
+            "LV Rit":      int(v["lv_rit"]),
+            "Stop Ok":     int(v["stop_ok"]),
+            "Stop Rit":    int(v["stop_rit"]),
+            "Prod. (LDV)": int(v["ldv_tot"]),
         } for giro, v in sorted(giri_giorno.items())]
         st.dataframe(pd.DataFrame(rows_g),
                      use_container_width=True, hide_index=True)
