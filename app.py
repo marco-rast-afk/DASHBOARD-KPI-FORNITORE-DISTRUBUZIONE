@@ -128,9 +128,9 @@ with st.sidebar:
                 st.success(f"✅ {len(st.session_state.dati)} filiali caricate")
             except Exception as e:
                 st.error(f"Errore lettura file: {e}")
-     # ── NUOVO: carica automaticamente da Google Drive ──────────
-           elif st.session_state.dati is None:
-        	with st.spinner("Caricamento dati da Google Drive..."):
+
+    elif st.session_state.dati is None:
+        with st.spinner("Caricamento dati da Google Drive..."):
             try:
                 import requests, io
                 r = requests.get(GDRIVE_URL, timeout=30)
