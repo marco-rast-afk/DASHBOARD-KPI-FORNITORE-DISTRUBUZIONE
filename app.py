@@ -100,9 +100,8 @@ def prod_color(p: float) -> str:
 # SESSION STATE — dati caricati una volta sola
 # ─────────────────────────────────────────────────────────────
 # ── GOOGLE DRIVE — ID del file Excel condiviso ──────────────
-GDRIVE_FILE_ID = "INCOLLA_QUI_IL_TUO_ID"   # ← sostituisci questo
-GDRIVE_URL = f"https://docs.google.com/spreadsheets/d/151L_nfX6dhCgzlPJ9grl2j8ghLrdqHWO/edit?usp=drive_link&ouid=109021770760106017946&rtpof=true&sd=true"
-if "dati"   not in st.session_state: st.session_state.dati   = None
+GDRIVE_FILE_ID = "151L_nfX6dhCgzlPJ9grl2j8ghLrdqHWO"
+GDRIVE_URL = f"https://docs.google.com/spreadsheets/d/{GDRIVE_FILE_ID}/export?format=xlsx"if "dati"   not in st.session_state: st.session_state.dati   = None
 if "fasce"  not in st.session_state: st.session_state.fasce  = [f.copy() for f in FASCE_DEFAULT]
 if "date_da" not in st.session_state: st.session_state.date_da = None
 if "date_a"  not in st.session_state: st.session_state.date_a  = None
