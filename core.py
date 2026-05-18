@@ -10,24 +10,24 @@ import pandas as pd
 
 # Fasce di ripiego se la filiale non è censita nel dizionario personalizzato
 FASCE_DEFAULT = [
-    {"da": 0,       "a": 50000,  "prezzo": 3.190},
-    {"da": 50000,   "a": 60000,  "prezzo": 3.050},
+    {"da": 0,       "a": 6142,  "prezzo": 1.000},
+    {"da": 6142,   "a": 10000,  "prezzo": 1.000,
 ]
 
 # DIZIONARIO PERSONALIZZATO: 2 scaglioni per filiale.
 # Usa lo stesso identico nome/ID che compare nel file Excel (es. "AP", "ROMA", ecc.)
 FASCE_PER_FILIALE = {
     "AP": [
-        {"da": 0,     "a": 40000,  "prezzo": 3.250},
-        {"da": 40000, "a": 80000,  "prezzo": 3.100},
+        {"da": 0,     "a":  6142,  "prezzo": 1.000},
+        {"da":  6142, "a": 10000,  "prezzo": 1.000},
     ],
     "AV": [
-        {"da": 0,     "a": 45000,  "prezzo": 3.300},
-        {"da": 45000, "a": 90000,  "prezzo": 3.150},
+        {"da": 0,     "a":  5000,  "prezzo": 1.000},
+        {"da":  5000, "a": 20000,  "prezzo": 1.000},
     ],
     "FG": [
-        {"da": 0,     "a": 55000,  "prezzo": 3.150},
-        {"da": 55000, "a": 100000, "prezzo": 2.950},
+        {"da": 0,     "a":  5000,  "prezzo": 1.000},
+        {"da":  5000, "a": 20000,  "prezzo": 1.000},
     ],
 }
 
