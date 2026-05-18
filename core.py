@@ -18,8 +18,8 @@ FASCE_DEFAULT = [
 # Usa lo stesso identico nome/ID che compare nel file Excel (es. "AP", "ROMA", ecc.)
 FASCE_PER_FILIALE = {
     "AP": [
-        {"da": 0,     "a": 40000,  "prezzo": 3.250},
-        {"da": 40000, "a": 80000,  "prezzo": 3.100},
+        {"da": 0,    "a": 6142,   "prezzo": 3.190},
+        {"da": 6143, "a": 10000,  "prezzo": 3.040},
     ],
     "AV": [
         {"da": 0,     "a": 45000,  "prezzo": 3.300},
