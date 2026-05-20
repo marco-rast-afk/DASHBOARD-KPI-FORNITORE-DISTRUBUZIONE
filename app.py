@@ -67,7 +67,7 @@ def colore_filiale(filiali: list, nome: str) -> str:
         return "#3b82f6"
 
 # ── GOOGLE DRIVE ──────────────────────────────────────────────
-GDRIVE_FILE_ID = "1zNFC6I2PqJpzMke1JsRjE-wm_3msQ8cT"
+GDRIVE_FILE_ID = "12iiOzb1er1AaJXjILGlzyQJbeDLOurKu"
 GDRIVE_URL = f"https://docs.google.com/spreadsheets/d/{GDRIVE_FILE_ID}/export?format=xlsx"
 
 if "dati"    not in st.session_state: st.session_state.dati    = None
