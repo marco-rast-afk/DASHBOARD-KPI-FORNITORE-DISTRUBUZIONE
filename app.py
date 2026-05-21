@@ -75,16 +75,21 @@ def get_supabase():
     key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
 
+def get_progetto() -> str:
+    """Legge il nome del progetto dai secrets Streamlit."""
+    return st.secrets["PROGETTO"]
+
 def carica_da_supabase() -> dict | None:
-    """Legge tutti i record da Supabase e li converte nel formato dati atteso."""
-    sb = get_supabase()
-    # Paginazione: Supabase restituisce max 1000 righe per chiamata
-    rows = []
-    offset = 0
+    """Legge i record del progetto corrente da Supabase."""
+    sb       = get_supabase()
+    progetto = get_progetto()
+    rows     = []
+    offset   = 0
     while True:
         chunk = (
             sb.table("performance_corrieri")
             .select("*")
+            .eq("progetto", progetto)          # ← filtra per progetto
             .range(offset, offset + 999)
             .execute()
             .data
@@ -116,14 +121,16 @@ def carica_da_supabase() -> dict | None:
 def importa_su_supabase(dati_nuovi: dict) -> int:
     """
     Fa upsert dei dati su Supabase (accoda senza duplicare).
-    La tabella deve avere UNIQUE (filiale, data, giro).
+    La tabella deve avere UNIQUE (progetto, filiale, data, giro).
     """
-    sb = get_supabase()
-    records = []
+    sb       = get_supabase()
+    progetto = get_progetto()
+    records  = []
     for filiale, giorni in dati_nuovi.items():
         for d, giri in giorni.items():
             for giro, v in giri.items():
                 records.append({
+                    "progetto": progetto,          # ← aggiunto
                     "filiale":  filiale,
                     "data":     d.isoformat(),
                     "giro":     str(giro),
@@ -138,7 +145,7 @@ def importa_su_supabase(dati_nuovi: dict) -> int:
     for i in range(0, len(records), 500):
         sb.table("performance_corrieri").upsert(
             records[i:i + 500],
-            on_conflict="filiale,data,giro"
+            on_conflict="progetto,filiale,data,giro"  # ← aggiunto progetto
         ).execute()
 
     return len(records)
@@ -151,6 +158,8 @@ if "date_a"  not in st.session_state: st.session_state.date_a  = None
 # ── SIDEBAR ───────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📦 Dashboard Performance")
+    progetto_attivo = st.secrets.get("PROGETTO", "—")
+    st.markdown(f"🗂 **Progetto:** `{progetto_attivo}`")
     st.markdown("---")
 
     # ── SEZIONE IMPORTA DATI ──
