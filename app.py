@@ -1,4 +1,4 @@
-# app.py — Dashboard Performance SDA — versione Streamlit web
+# app.py — Dashboard Performance SDA — versione Streamlit web + Supabase
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -66,37 +66,131 @@ def colore_filiale(filiali: list, nome: str) -> str:
     except ValueError:
         return "#3b82f6"
 
-# ── GOOGLE DRIVE ──────────────────────────────────────────────
-GDRIVE_FILE_ID = "12iiOzb1er1AaJXjILGlzyQJbeDLOurKu"
-GDRIVE_URL = f"https://docs.google.com/spreadsheets/d/{GDRIVE_FILE_ID}/export?format=xlsx"
+# ── SUPABASE ──────────────────────────────────────────────────
+from supabase import create_client
 
+@st.cache_resource
+def get_supabase():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+def carica_da_supabase() -> dict | None:
+    """Legge tutti i record da Supabase e li converte nel formato dati atteso."""
+    sb = get_supabase()
+    # Paginazione: Supabase restituisce max 1000 righe per chiamata
+    rows = []
+    offset = 0
+    while True:
+        chunk = (
+            sb.table("performance_corrieri")
+            .select("*")
+            .range(offset, offset + 999)
+            .execute()
+            .data
+        )
+        rows.extend(chunk)
+        if len(chunk) < 1000:
+            break
+        offset += 1000
+
+    if not rows:
+        return None
+
+    # Ricostruisce la struttura: {filiale: {data: {giro: {...}}}}
+    dati: dict = {}
+    for r in rows:
+        fil  = r["filiale"]
+        d    = date.fromisoformat(r["data"])
+        giro = r["giro"]
+        dati.setdefault(fil, {}).setdefault(d, {})[giro] = {
+            "lv_af":   r["lv_af"],
+            "lv_ok":   r["lv_ok"],
+            "lv_rit":  r["lv_rit"],
+            "stop_ok": r["stop_ok"],
+            "stop_rit": r["stop_rit"],
+            "ldv_tot": r["lv_ok"] + r["lv_rit"],
+        }
+    return dati
+
+def importa_su_supabase(dati_nuovi: dict) -> int:
+    """
+    Fa upsert dei dati su Supabase (accoda senza duplicare).
+    La tabella deve avere UNIQUE (filiale, data, giro).
+    """
+    sb = get_supabase()
+    records = []
+    for filiale, giorni in dati_nuovi.items():
+        for d, giri in giorni.items():
+            for giro, v in giri.items():
+                records.append({
+                    "filiale":  filiale,
+                    "data":     d.isoformat(),
+                    "giro":     str(giro),
+                    "lv_af":    int(v.get("lv_af",   0)),
+                    "lv_ok":    int(v.get("lv_ok",   0)),
+                    "lv_rit":   int(v.get("lv_rit",  0)),
+                    "stop_ok":  int(v.get("stop_ok", 0)),
+                    "stop_rit": int(v.get("stop_rit", 0)),
+                })
+
+    # Upsert a blocchi di 500 record
+    for i in range(0, len(records), 500):
+        sb.table("performance_corrieri").upsert(
+            records[i:i + 500],
+            on_conflict="filiale,data,giro"
+        ).execute()
+
+    return len(records)
+
+# ── SESSION STATE ──────────────────────────────────────────────
 if "dati"    not in st.session_state: st.session_state.dati    = None
 if "date_da" not in st.session_state: st.session_state.date_da = None
 if "date_a"  not in st.session_state: st.session_state.date_a  = None
 
+# ── SIDEBAR ───────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📦 Dashboard Performance")
     st.markdown("---")
-    uploaded = st.file_uploader("Carica il file Excel", type=["xlsx", "xls"])
+
+    # ── SEZIONE IMPORTA DATI ──
+    st.markdown("### 📥 Importa Dati")
+    st.caption("Carica un file Excel: i dati vengono accodati a quelli esistenti su Supabase.")
+
+    uploaded = st.file_uploader("Seleziona file Excel", type=["xlsx", "xls"])
     if uploaded:
-        with st.spinner("Lettura file..."):
-            try:
-                st.session_state.dati = leggi_file_corrieri(uploaded)
-                st.success(f"✅ {len(st.session_state.dati)} filiali caricate")
-            except Exception as e:
-                st.error(f"Errore lettura file: {e}")
-    elif st.session_state.dati is None:
-        with st.spinner("Caricamento dati da Google Drive..."):
-            try:
-                import requests
-                r = requests.get(GDRIVE_URL, timeout=30)
-                r.raise_for_status()
-                st.session_state.dati = leggi_file_corrieri(io.BytesIO(r.content), engine="openpyxl")
-                st.success(f"✅ Dati caricati — {len(st.session_state.dati)} filiali")
-            except Exception as e:
-                st.error(f"Impossibile scaricare da Drive: {e}")
+        if st.button("⬆ Importa su Supabase", use_container_width=True, type="primary"):
+            with st.spinner("Lettura e importazione in corso..."):
+                try:
+                    dati_nuovi = leggi_file_corrieri(uploaded)
+                    n_righe = importa_su_supabase(dati_nuovi)
+                    st.success(f"✅ {n_righe} record importati!")
+                    st.session_state.dati = None  # forza ricaricamento dal DB
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Errore importazione: {e}")
 
     st.markdown("---")
+
+    # ── CARICA DATI DA SUPABASE ──
+    if st.session_state.dati is None:
+        with st.spinner("Caricamento dati da Supabase..."):
+            try:
+                st.session_state.dati = carica_da_supabase()
+                if st.session_state.dati:
+                    st.success(f"✅ {len(st.session_state.dati)} filiali caricate")
+                else:
+                    st.warning("Nessun dato presente. Importa un file Excel.")
+            except Exception as e:
+                st.error(f"Errore connessione Supabase: {e}")
+
+    if st.button("🔄 Ricarica da Supabase", use_container_width=True):
+        st.session_state.dati = None
+        st.rerun()
+
+    st.markdown("---")
+
+    # ── FILTRO DATE ──
     if st.session_state.dati:
         tutte_date = sorted({d for fil in st.session_state.dati.values() for d in fil})
         if tutte_date:
@@ -125,7 +219,7 @@ with st.sidebar:
                     st.rerun()
 
 if not st.session_state.dati:
-    st.info("👈 Carica il file Performance_Corrieri.xlsx dalla barra laterale per iniziare.")
+    st.info("👈 Importa un file Excel dalla barra laterale, oppure attendi il caricamento da Supabase.")
     st.stop()
 
 dati    = st.session_state.dati
@@ -186,7 +280,7 @@ with tab1:
         fig_prod.update_layout(**LAYOUT_DARK, height=300, xaxis=dict(gridcolor="#2a3045"), yaxis=dict(gridcolor="#2a3045", title="Media Giornaliera Pezzi per Corriere"))
         st.plotly_chart(fig_prod, use_container_width=True)
 
-        # GRAFICO 2 — LV Ok vs LV Ritiro per filiale (come foto 1 in basso)
+        # GRAFICO 2 — LV Ok vs LV Ritiro per filiale
         st.markdown("#### LV Ok vs LV Ritiro per Filiale")
         fig_lv = go.Figure()
         fig_lv.add_trace(go.Bar(
@@ -234,7 +328,7 @@ with tab2:
 
         st.markdown("---")
 
-        # GRAFICO — Andamento giornaliero LV Ok e LV Rit (come foto 2)
+        # GRAFICO — Andamento giornaliero LV Ok e LV Rit
         st.markdown("#### Andamento Giornaliero LV Ok e LV Ritiro")
         giorni_data = []
         for d in sorted(giornate):
@@ -380,7 +474,7 @@ with tab4:
                 "Produttività (LV OK + RIT)":    int(v.get("ldv_tot", 0)),
             })
 
-        # GRAFICO — Barre orizzontali LV Ok + Rit per giro (come foto 3)
+        # GRAFICO — Barre orizzontali LV Ok + Rit per giro
         st.markdown("#### LV Ok e LV Ritiro per Giro")
         fig_day = go.Figure()
         fig_day.add_trace(go.Bar(
@@ -426,7 +520,7 @@ with tab5:
 
         st.markdown("---")
 
-        # GRAFICO — Fatturato giornaliero (come foto 4)
+        # GRAFICO — Fatturato giornaliero
         st.markdown("#### Fatturato Giornaliero")
         df_tar = pd.DataFrame(righe_tar)
         fig_tar = go.Figure(go.Bar(
