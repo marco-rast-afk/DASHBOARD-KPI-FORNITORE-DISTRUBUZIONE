@@ -1062,7 +1062,8 @@ with tab6:
             df_sto = pd.DataFrame(storico_rows)
 
             # Filtro weekend (sabato=5, domenica=6) — applicato a grafico E tabella
-            df_sto["_dow"] = pd.to_datetime(df_sto["data_riferimento"]).dt.dayofweek
+            df_sto["_dt"]  = pd.to_datetime(df_sto["data_riferimento"])
+            df_sto["_dow"] = df_sto["_dt"].dt.dayofweek
             df_sto_fer = df_sto[df_sto["_dow"] < 5].drop(columns=["_dow"]).copy()
             df_chart   = df_sto_fer.sort_values("data_riferimento")
 
@@ -1075,7 +1076,7 @@ with tab6:
             ]:
                 if _col_pct in df_chart.columns:
                     fig_trend_r.add_trace(go.Scatter(
-                        x=df_chart["data_riferimento"],
+                        x=df_chart["_dt"],          # datetime → Plotly gestisce i buchi
                         y=(df_chart[_col_pct].astype(float) * 100).round(1),
                         name=_nome,
                         mode="lines+markers",
@@ -1084,12 +1085,20 @@ with tab6:
                     ))
             fig_trend_r.update_layout(
                 **LAYOUT_DARK, height=280,
-                xaxis=dict(gridcolor="#2a3045"),
+                xaxis=dict(
+                    gridcolor="#2a3045",
+                    type="date",
+                    rangebreaks=[
+                        dict(bounds=["sat", "mon"]),  # esclude sabato e domenica
+                    ],
+                    tickformat="%d %b",
+                ),
                 yaxis=dict(gridcolor="#2a3045", ticksuffix="%", range=[50, 105]),
             )
             st.plotly_chart(fig_trend_r, use_container_width=True)
 
             # Tabella — stessi dati filtrati (solo feriali), ordinati per data desc
+            df_sto_fer = df_sto_fer.drop(columns=["_dt"], errors="ignore")
             _cols_s = ["data_riferimento", "nome_file", "totale", "valide",
                        "ritirati", "ldv", "assenti", "non_pronti",
                        "pct_p", "pct_s", "pct_f", "pct_u"]
