@@ -447,31 +447,61 @@ with tab3:
 # ══════════════════════════════════════════════════════════════
 with tab4:
     st.markdown("### Dettaglio Giornaliero per Filiale")
-    fil_giorno = st.selectbox("Seleziona filiale", filiali, key="fil_giorno")
-    _, giornate_g, _ = aggrega_filiale(dati[fil_giorno], date_da, date_a)
+
+    fil_giorno = st.selectbox(
+        "Seleziona filiale",
+        filiali,
+        key="fil_giorno"
+    )
+
+    _, giornate_g, _ = aggrega_filiale(
+        dati[fil_giorno],
+        date_da,
+        date_a
+    )
 
     if giornate_g:
-        date_sel = st.selectbox("Seleziona data", sorted(giornate_g.keys(), reverse=True),
-                                format_func=lambda d: d.strftime("%d/%m/%Y"))
+
+        date_sel = st.selectbox(
+            "Seleziona data",
+            sorted(giornate_g.keys(), reverse=True),
+            format_func=lambda d: d.strftime("%d/%m/%Y")
+        )
+
         giri_day = giornate_g[date_sel]
 
         # KPI giornata
-        lv_af_g  = sum(v.get("lv_af",  0) for v in giri_day.values())
-        lv_ok_g  = sum(v.get("lv_ok",  0) for v in giri_day.values())
-        lv_rit_g = sum(v.get("lv_rit", 0) for v in giri_day.values())
+        lv_af_g  = sum(v.get("lv_af",0) for v in giri_day.values())
+        lv_ok_g  = sum(v.get("lv_ok",0) for v in giri_day.values())
+        lv_rit_g = sum(v.get("lv_rit",0) for v in giri_day.values())
         stop_ok  = sum(v.get("stop_ok",0) for v in giri_day.values())
-        prod_tot = sum(v.get("ldv_tot", 0) for v in giri_day.values())
 
-        c1, c2, c3, c4, c5 = st.columns(5)
-        with c1: kpi_card("LV Affidate",    fmt_n(lv_af_g),   "#3b82f6")
-        with c2: kpi_card("LV Ok",          fmt_n(lv_ok_g),   "#22c55e")
-        with c3: kpi_card("LV Ritiro",      fmt_n(lv_rit_g),  "#a855f7")
-        with c4: kpi_card("Stop Ok",        fmt_n(stop_ok),   "#14b8a6")
-        with c5: kpi_card("Prod. (LDV)",    fmt_n(prod_tot),  "#f59e0b")
+        tot_ldv    = lv_ok_g + lv_rit_g
+        n_giri     = len(giri_day)
+        prod_media = tot_ldv / n_giri if n_giri > 0 else 0
+        rdc        = (lv_ok_g / lv_af_g * 100) if lv_af_g > 0 else 0
+
+        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+
+        with c1:
+            kpi_card("LV Affidate",       fmt_n(lv_af_g),          "#3b82f6")
+        with c2:
+            kpi_card("LV Ok",             fmt_n(lv_ok_g),          "#22c55e")
+        with c3:
+            kpi_card("LV Ritiro",         fmt_n(lv_rit_g),         "#a855f7")
+        with c4:
+            kpi_card("Stop Ok",           fmt_n(stop_ok),          "#14b8a6")
+        with c5:
+            kpi_card("Volume Totale LDV", fmt_n(tot_ldv),          "#94a3b8")
+        with c6:
+            kpi_card("Prod. Media",       f"{prod_media:.1f}",     "#f59e0b")
+        with c7:
+            kpi_card("RDC",               f"{rdc:.1f}%",           "#ef4444")
 
         st.markdown("---")
 
         righe_giorno = []
+
         for g, v in sorted(giri_day.items()):
             righe_giorno.append({
                 "Giro":                          g,
@@ -480,27 +510,45 @@ with tab4:
                 "LV RIT":                        int(v.get("lv_rit", 0)),
                 "STOP OK":                       int(v.get("stop_ok",0)),
                 "STOP RIT":                      int(v.get("stop_rit",0)),
-                "Produttività (LV OK + RIT)":    int(v.get("ldv_tot", 0)),
+                "Produttività (LV OK + RIT)":    int(v.get("ldv_tot",0)),
             })
 
-        # GRAFICO — Barre orizzontali LV Ok + Rit per giro
         st.markdown("#### LV Ok e LV Ritiro per Giro")
+
         fig_day = go.Figure()
+
         fig_day.add_trace(go.Bar(
             y=[f"Giro {r['Giro']}" for r in righe_giorno],
             x=[r["LV OK"] for r in righe_giorno],
-            name="LV Ok", orientation="h", marker_color="#22c55e",
+            name="LV Ok",
+            orientation="h",
+            marker_color="#22c55e",
         ))
+
         fig_day.add_trace(go.Bar(
             y=[f"Giro {r['Giro']}" for r in righe_giorno],
             x=[r["LV RIT"] for r in righe_giorno],
-            name="LV Rit", orientation="h", marker_color="#a855f7",
+            name="LV Rit",
+            orientation="h",
+            marker_color="#a855f7",
         ))
-        fig_day.update_layout(**LAYOUT_DARK, barmode="stack", height=max(250, len(righe_giorno) * 30), yaxis=dict(gridcolor="#2a3045", autorange="reversed"), xaxis=dict(gridcolor="#2a3045"))
-        fig_day.update_layout(margin=dict(l=0, r=0, t=20, b=0))
+
+        fig_day.update_layout(
+            **LAYOUT_DARK,
+            barmode="stack",
+            height=max(250, len(righe_giorno) * 30),
+            yaxis=dict(gridcolor="#2a3045", autorange="reversed"),
+            xaxis=dict(gridcolor="#2a3045")
+        )
+
         st.plotly_chart(fig_day, use_container_width=True)
 
-        st.dataframe(pd.DataFrame(righe_giorno), use_container_width=True, hide_index=True)
+        st.dataframe(
+            pd.DataFrame(righe_giorno),
+            use_container_width=True,
+            hide_index=True
+        )
+
     else:
         st.warning("Nessun dato disponibile nel periodo selezionato.")
 
