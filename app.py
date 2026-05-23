@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import io
 
 from core import (
@@ -234,7 +234,36 @@ def _leggi_ritiri(uploaded_file) -> list[dict]:
     return result
 
 
-def _calcola_ritiri(righe: list[dict]) -> dict:
+def _estrai_data_riferimento(righe: list[dict]) -> str:
+    """
+    Estrae la data di riferimento dal contenuto del file.
+    Usa la colonna 'Data' delle righe: prende la data più frequente
+    (il giorno del ritiro) e la restituisce come stringa YYYY-MM-DD.
+    Fallback: data odierna.
+    """
+    import re
+    from collections import Counter
+
+    candidate_dates = []
+    for r in righe:
+        raw = r.get("Data", "").strip()
+        if not raw:
+            continue
+        # Prova vari formati: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, DD/MM/YY
+        for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%y", "%d-%m-%y"):
+            try:
+                d = datetime.strptime(raw[:10], fmt).date()
+                candidate_dates.append(d)
+                break
+            except ValueError:
+                continue
+
+    if not candidate_dates:
+        return date.today().isoformat()
+
+    # Data più frequente nel file (giorno di riferimento del file)
+    most_common = Counter(candidate_dates).most_common(1)[0][0]
+    return most_common.isoformat()
     """Calcola KPI aggregati dai ritiri — stessa logica del .pyw."""
     from collections import defaultdict
     valide = [r for r in righe
@@ -486,11 +515,6 @@ with st.sidebar:
             key="up_ritiri_sb",
         )
         if up_ritiri_sb:
-            data_rif_sb = st.date_input(
-                "Data di riferimento",
-                value=date.today(),
-                key="data_rif_ritiri_sb",
-            )
             if st.button("⬆️ Calcola & Pubblica Ritiri",
                          type="primary", use_container_width=True,
                          key="btn_pubblica_ritiri_sb"):
@@ -500,21 +524,22 @@ with st.sidebar:
                         if not _righe_sb:
                             st.error("Nessun dato trovato nel file.")
                         else:
-                            _calc_sb = _calcola_ritiri(_righe_sb)
-                            _n_pub   = _pubblica_ritiri(
+                            _calc_sb  = _calcola_ritiri(_righe_sb)
+                            _data_rif = _estrai_data_riferimento(_righe_sb)
+                            _n_pub    = _pubblica_ritiri(
                                 _righe_sb, _calc_sb,
                                 up_ritiri_sb.name,
                                 _filiale_ritiri_sb,
-                                data_rif_sb.isoformat(),
+                                _data_rif,
                             )
                             _carica_storico_ritiri.clear()
                             _carica_dettaglio_ritiri.clear()
-                            st.session_state["ritiri_calc"]  = _calc_sb
-                            st.session_state["ritiri_righe"] = _righe_sb
-                            st.session_state["ritiri_data_rif"] = data_rif_sb.strftime("%d/%m/%Y")
+                            st.session_state["ritiri_calc"]     = _calc_sb
+                            st.session_state["ritiri_righe"]    = _righe_sb
+                            _data_fmt = datetime.strptime(_data_rif, "%Y-%m-%d").strftime("%d/%m/%Y")
+                            st.session_state["ritiri_data_rif"] = _data_fmt
                             st.success(
-                                f"✅ {_n_pub} righe pubblicate "
-                                f"({data_rif_sb.strftime('%d/%m/%Y')})"
+                                f"✅ {_n_pub} righe pubblicate ({_data_fmt})"
                             )
                             st.rerun()
                     except Exception as _ex:
@@ -991,7 +1016,11 @@ with tab6:
             st.info("Nessun dato nello storico. Pubblica il primo file dalla barra laterale.")
         else:
             df_sto = pd.DataFrame(storico_rows)
-            df_chart = df_sto.sort_values("data_riferimento")
+            df_chart = df_sto.sort_values("data_riferimento").copy()
+
+            # Escludi sabato (5) e domenica (6)
+            df_chart["_dow"] = pd.to_datetime(df_chart["data_riferimento"]).dt.dayofweek
+            df_chart = df_chart[df_chart["_dow"] < 5].drop(columns=["_dow"])
 
             fig_trend_r = go.Figure()
             for _col_pct, _nome, _col in [
@@ -1012,7 +1041,7 @@ with tab6:
             fig_trend_r.update_layout(
                 **LAYOUT_DARK, height=280,
                 xaxis=dict(gridcolor="#2a3045"),
-                yaxis=dict(gridcolor="#2a3045", ticksuffix="%", range=[0, 105]),
+                yaxis=dict(gridcolor="#2a3045", ticksuffix="%", range=[50, 105]),
             )
             st.plotly_chart(fig_trend_r, use_container_width=True)
 
