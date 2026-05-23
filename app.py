@@ -941,48 +941,91 @@ with tab6:
         )
         st.stop()
 
+    # ══════════════════════════════════════════════════════════
+    # Carica storico subito (serve per KPI fallback e per il tab)
+    # ══════════════════════════════════════════════════════════
+    _storico_rows_preload = _carica_storico_ritiri(filiale_ritiri)
+
     # ── Header ────────────────────────────────────────────────
     _th1, _th2 = st.columns([3, 1])
     with _th1:
         st.markdown("### 📦 Ritiri")
     with _th2:
-        if "ritiri_calc" in st.session_state:
-            _c_hdr = st.session_state["ritiri_calc"]
-            _data_hdr = st.session_state.get("ritiri_data_rif", "")
-            if _data_hdr:
-                st.markdown(
-                    f"<div style='text-align:right;color:#94a3b8;font-size:0.85rem;"
-                    f"padding-top:10px'>Ultimo caricamento: <b>{_data_hdr}</b></div>",
-                    unsafe_allow_html=True,
-                )
+        _data_hdr = st.session_state.get("ritiri_data_rif", "")
+        if not _data_hdr and _storico_rows_preload:
+            # Prendi la data più recente dallo storico
+            _data_hdr = pd.to_datetime(
+                _storico_rows_preload[0]["data_riferimento"]
+            ).strftime("%d/%m/%Y")
+        if _data_hdr:
+            st.markdown(
+                f"<div style='text-align:right;color:#94a3b8;font-size:0.85rem;"
+                f"padding-top:10px'>Riferimento: <b>{_data_hdr}</b></div>",
+                unsafe_allow_html=True,
+            )
 
     # ══════════════════════════════════════════════════════════
-    # RIGA KPI — visibile sempre (dati da sessione o placeholder)
+    # RIGA KPI — sessione se disponibile, altrimenti ultimo
+    # record dello storico Supabase (esclusi sabato/domenica)
     # ══════════════════════════════════════════════════════════
+    def _kpi_from_storico(rec: dict):
+        """Mostra le KPI card partendo da un record dello storico."""
+        _tot  = rec.get("totale",   0) or 0
+        _rit  = rec.get("ritirati", 0) or 0
+        _ldv  = rec.get("ldv",      0) or 0
+        _ann  = rec.get("annullati",0) or 0
+        _ass  = rec.get("assenti",  0) or 0
+        _np   = rec.get("non_pronti",0) or 0
+        _pp   = float(rec.get("pct_p", 0) or 0)
+        _ps   = float(rec.get("pct_s", 0) or 0)
+        _pf   = float(rec.get("pct_f", 0) or 0)
+        _pu   = float(rec.get("pct_u", 0) or 0)
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
+        with k1: kpi_card("Totale Ritiri",   str(_tot), "#3b82f6")
+        with k2: kpi_card("Ritirati",         str(_rit), "#22c55e")
+        with k3: kpi_card("LDV Ritirate",    str(_ldv), "#22c55e")
+        with k4: kpi_card("Annullati",        str(_ann), "#ef4444")
+        with k5: kpi_card("Assenti",          str(_ass), "#f59e0b")
+        with k6: kpi_card("Merce Non Pronta", str(_np),  "#f59e0b")
+        st.markdown("<div style='margin:6px 0'></div>", unsafe_allow_html=True)
+        _sp1, p1, p2, p3, p4, _sp2 = st.columns([1, 2, 2, 2, 2, 1])
+        with p1: kpi_card("% Poste", f"{_pp:.1%}", "#a855f7")
+        with p2: kpi_card("% SDA",   f"{_ps:.1%}", "#3b82f6")
+        with p3: kpi_card("% Fissi", f"{_pf:.1%}", "#22c55e")
+        with p4: kpi_card("% UPS",   f"{_pu:.1%}", "#f59e0b")
+
     if "ritiri_calc" in st.session_state:
+        # Dati da upload in sessione
         _c = st.session_state["ritiri_calc"]
         _n_rit = _c["lav_p"] + _c["rit_s"] + _c["lav_f"] + _c["rit_u"]
         _n_ann = _c["totale"] - len(_c["valide"])
         _n_ass = sum(_c["pivot"].get(t, {}).get("CLIENTE ASSENTE",  0) for t in _TUTTE_TIP)
         _n_np  = sum(_c["pivot"].get(t, {}).get("MERCE NON PRONTA", 0) for t in _TUTTE_TIP)
-
-        # ── Riga 1: 6 KPI operativi ───────────────────────────
         k1, k2, k3, k4, k5, k6 = st.columns(6)
-        with k1: kpi_card("Totale Ritiri",    str(_c["totale"]),  "#3b82f6")
-        with k2: kpi_card("Ritirati",          str(_n_rit),        "#22c55e")
-        with k3: kpi_card("LDV Ritirate",     str(_c["n_ldv"]),   "#22c55e")
-        with k4: kpi_card("Annullati",         str(_n_ann),        "#ef4444")
-        with k5: kpi_card("Assenti",           str(_n_ass),        "#f59e0b")
-        with k6: kpi_card("Merce Non Pronta",  str(_n_np),         "#f59e0b")
-
+        with k1: kpi_card("Totale Ritiri",   str(_c["totale"]), "#3b82f6")
+        with k2: kpi_card("Ritirati",         str(_n_rit),       "#22c55e")
+        with k3: kpi_card("LDV Ritirate",    str(_c["n_ldv"]),  "#22c55e")
+        with k4: kpi_card("Annullati",        str(_n_ann),       "#ef4444")
+        with k5: kpi_card("Assenti",          str(_n_ass),       "#f59e0b")
+        with k6: kpi_card("Merce Non Pronta", str(_n_np),        "#f59e0b")
         st.markdown("<div style='margin:6px 0'></div>", unsafe_allow_html=True)
-
-        # ── Riga 2: 4 KPI % categoria (centrate con spacer) ───
         _sp1, p1, p2, p3, p4, _sp2 = st.columns([1, 2, 2, 2, 2, 1])
         with p1: kpi_card("% Poste", f"{_c['pct_p']:.1%}", "#a855f7")
         with p2: kpi_card("% SDA",   f"{_c['pct_s']:.1%}", "#3b82f6")
         with p3: kpi_card("% Fissi", f"{_c['pct_f']:.1%}", "#22c55e")
         with p4: kpi_card("% UPS",   f"{_c['pct_u']:.1%}", "#f59e0b")
+
+    elif _storico_rows_preload:
+        # Fallback: ultimo giorno feriale disponibile nello storico
+        _ultimo_feriale = next(
+            (r for r in _storico_rows_preload
+             if pd.to_datetime(r["data_riferimento"]).dayofweek < 5),
+            _storico_rows_preload[0],
+        )
+        _data_ult = pd.to_datetime(_ultimo_feriale["data_riferimento"]).strftime("%d/%m/%Y")
+        st.caption(f"ℹ️ Dati più recenti disponibili: **{_data_ult}**")
+        _kpi_from_storico(_ultimo_feriale)
+
     else:
         st.markdown(
             "<div style='background:#1e2330;border:1px dashed #2a3045;border-radius:10px;"
@@ -1009,18 +1052,19 @@ with tab6:
         with _rc2:
             if st.button("🔄 Aggiorna", key="btn_refresh_sto"):
                 _carica_storico_ritiri.clear()
+                st.rerun()
 
-        storico_rows = _carica_storico_ritiri(filiale_ritiri)
+        storico_rows = _storico_rows_preload
 
         if not storico_rows:
             st.info("Nessun dato nello storico. Pubblica il primo file dalla barra laterale.")
         else:
             df_sto = pd.DataFrame(storico_rows)
-            df_chart = df_sto.sort_values("data_riferimento").copy()
 
-            # Escludi sabato (5) e domenica (6)
-            df_chart["_dow"] = pd.to_datetime(df_chart["data_riferimento"]).dt.dayofweek
-            df_chart = df_chart[df_chart["_dow"] < 5].drop(columns=["_dow"])
+            # Filtro weekend (sabato=5, domenica=6) — applicato a grafico E tabella
+            df_sto["_dow"] = pd.to_datetime(df_sto["data_riferimento"]).dt.dayofweek
+            df_sto_fer = df_sto[df_sto["_dow"] < 5].drop(columns=["_dow"]).copy()
+            df_chart   = df_sto_fer.sort_values("data_riferimento")
 
             fig_trend_r = go.Figure()
             for _col_pct, _nome, _col in [
@@ -1045,11 +1089,12 @@ with tab6:
             )
             st.plotly_chart(fig_trend_r, use_container_width=True)
 
+            # Tabella — stessi dati filtrati (solo feriali), ordinati per data desc
             _cols_s = ["data_riferimento", "nome_file", "totale", "valide",
                        "ritirati", "ldv", "assenti", "non_pronti",
                        "pct_p", "pct_s", "pct_f", "pct_u"]
-            _cols_s   = [c for c in _cols_s if c in df_sto.columns]
-            df_sto_tab = df_sto[_cols_s].copy()
+            _cols_s    = [c for c in _cols_s if c in df_sto_fer.columns]
+            df_sto_tab = df_sto_fer.sort_values("data_riferimento", ascending=False)[_cols_s].copy()
             for _pc in ["pct_p", "pct_s", "pct_f", "pct_u"]:
                 if _pc in df_sto_tab.columns:
                     df_sto_tab[_pc] = df_sto_tab[_pc].apply(
