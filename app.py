@@ -1089,11 +1089,22 @@ with tab6:
                     gridcolor="#2a3045",
                     type="date",
                     rangebreaks=[
-                        dict(bounds=["sat", "mon"]),  # esclude sabato e domenica
+                        dict(bounds=["sat", "mon"]),
                     ],
                     tickformat="%d %b",
                 ),
-                yaxis=dict(gridcolor="#2a3045", ticksuffix="%", range=[50, 105]),
+                yaxis=dict(
+                    gridcolor="#2a3045",
+                    ticksuffix="%",
+                    range=[60, 105],
+                    dtick=5,
+                ),
+                shapes=[dict(
+                    type="line",
+                    xref="paper", x0=0, x1=1,
+                    yref="y",    y0=85, y1=85,
+                    line=dict(color="#ef4444", width=1.5, dash="dot"),
+                )],
             )
             st.plotly_chart(fig_trend_r, use_container_width=True)
 
