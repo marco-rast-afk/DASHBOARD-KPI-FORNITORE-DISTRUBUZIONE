@@ -315,44 +315,64 @@ def _pubblica_ritiri(righe: list[dict], calc: dict,
     1. DELETE ritiri_dettaglio (project=RITIRI, filiale) — rimuove il giorno precedente
     2. INSERT ritiri_dettaglio  (righe correnti)
     3. INSERT ritiri_storico    (KPI aggregati)
-    Ritorna numero righe inserite nel dettaglio.
+    Ritorna tuple (n_righe_dettaglio, detail_aggiornato: bool).
     """
     sb = get_supabase()
 
-    # 1. Cancella dettaglio precedente
-    sb.table("ritiri_dettaglio") \
-      .delete() \
-      .eq("project", "RITIRI") \
-      .eq("filiale", filiale) \
-      .execute()
+    # Controlla la data attuale del dettaglio in Supabase
+    _existing = (sb.table("ritiri_dettaglio")
+                   .select("data_riferimento")
+                   .eq("project", "RITIRI")
+                   .eq("filiale", filiale)
+                   .limit(1)
+                   .execute()
+                   .data)
+    _existing_date = None
+    if _existing:
+        try:
+            _existing_date = date.fromisoformat(_existing[0]["data_riferimento"])
+        except Exception:
+            pass
 
-    # 2. Inserisci dettaglio (batch 200)
-    rows_det = [{
-        "project":              "RITIRI",
-        "filiale":              filiale,
-        "data_riferimento":     data_rif,
-        "id_ritiro":            r.get("Id Ritiro", ""),
-        "codice_prenotazione":  r.get("Codice Prenotazione", ""),
-        "canale":               r.get("Canale", ""),
-        "tipologia":            r.get("Tipologia", ""),
-        "ragione_sociale":      r.get("Ragione Sociale", ""),
-        "telefono":             r.get("Telefono", ""),
-        "indirizzo":            r.get("Indirizzo", ""),
-        "data_ritiro":          r.get("Data", ""),
-        "filiale_riga":         r.get("Filiale", ""),
-        "giro":                 r.get("Giro", ""),
-        "stato_lavorazione":    r.get("Stato Lavorazione", ""),
-        "stato_ritiro":         r.get("Stato Ritiro", ""),
-        "lv_ritirate":          r.get("LV Ritirate", ""),
-        "note_corriere":        r.get("Note Corriere", ""),
-        "id_ritiro_ups":        r.get("Id Ritiro UPS", ""),
-    } for r in righe]
+    _nuova_date = date.fromisoformat(data_rif)
+    _aggiorna_dettaglio = (_existing_date is None) or (_nuova_date >= _existing_date)
 
-    BATCH = 200
-    for i in range(0, len(rows_det), BATCH):
-        sb.table("ritiri_dettaglio").insert(rows_det[i:i + BATCH]).execute()
+    rows_det = []
+    if _aggiorna_dettaglio:
+        # 1. Cancella dettaglio precedente solo se la nuova data è >= quella esistente
+        sb.table("ritiri_dettaglio") \
+          .delete() \
+          .eq("project", "RITIRI") \
+          .eq("filiale", filiale) \
+          .execute()
 
-    # 3. Inserisci storico KPI
+        # 2. Inserisci dettaglio (batch 200)
+        rows_det = [{
+            "project":              "RITIRI",
+            "filiale":              filiale,
+            "data_riferimento":     data_rif,
+            "id_ritiro":            r.get("Id Ritiro", ""),
+            "codice_prenotazione":  r.get("Codice Prenotazione", ""),
+            "canale":               r.get("Canale", ""),
+            "tipologia":            r.get("Tipologia", ""),
+            "ragione_sociale":      r.get("Ragione Sociale", ""),
+            "telefono":             r.get("Telefono", ""),
+            "indirizzo":            r.get("Indirizzo", ""),
+            "data_ritiro":          r.get("Data", ""),
+            "filiale_riga":         r.get("Filiale", ""),
+            "giro":                 r.get("Giro", ""),
+            "stato_lavorazione":    r.get("Stato Lavorazione", ""),
+            "stato_ritiro":         r.get("Stato Ritiro", ""),
+            "lv_ritirate":          r.get("LV Ritirate", ""),
+            "note_corriere":        r.get("Note Corriere", ""),
+            "id_ritiro_ups":        r.get("Id Ritiro UPS", ""),
+        } for r in righe]
+
+        BATCH = 200
+        for i in range(0, len(rows_det), BATCH):
+            sb.table("ritiri_dettaglio").insert(rows_det[i:i + BATCH]).execute()
+
+    # 3. Inserisci storico KPI (sempre, indipendentemente dal dettaglio)
     c = calc
     n_ass  = sum(c["pivot"].get(t, {}).get("CLIENTE ASSENTE",   0) for t in _TUTTE_TIP)
     n_np   = sum(c["pivot"].get(t, {}).get("MERCE NON PRONTA",  0) for t in _TUTTE_TIP)
@@ -375,10 +395,10 @@ def _pubblica_ritiri(righe: list[dict], calc: dict,
         "tot_s": c["tot_s"], "rit_s": c["rit_s"], "pct_s": round(c["pct_s"], 6),
         "tot_f": c["tot_f"], "lav_f": c["lav_f"], "pct_f": round(c["pct_f"], 6),
         "tot_u": c["tot_u"], "rit_u": c["rit_u"], "pct_u": round(c["pct_u"], 6),
-        "has_detail": True,
+        "has_detail": _aggiorna_dettaglio,
     }).execute()
 
-    return len(rows_det)
+    return len(rows_det), _aggiorna_dettaglio
 
 
 @st.cache_data(ttl=120)
@@ -526,7 +546,7 @@ with st.sidebar:
                         else:
                             _calc_sb  = _calcola_ritiri(_righe_sb)
                             _data_rif = _estrai_data_riferimento(_righe_sb)
-                            _n_pub    = _pubblica_ritiri(
+                            _n_pub, _det_aggiornato = _pubblica_ritiri(
                                 _righe_sb, _calc_sb,
                                 up_ritiri_sb.name,
                                 _filiale_ritiri_sb,
@@ -538,9 +558,10 @@ with st.sidebar:
                             st.session_state["ritiri_righe"]    = _righe_sb
                             _data_fmt = datetime.strptime(_data_rif, "%Y-%m-%d").strftime("%d/%m/%Y")
                             st.session_state["ritiri_data_rif"] = _data_fmt
-                            st.success(
-                                f"✅ {_n_pub} righe pubblicate ({_data_fmt})"
-                            )
+                            if _det_aggiornato:
+                                st.success(f"✅ {_n_pub} righe + KPI pubblicati ({_data_fmt})")
+                            else:
+                                st.success(f"✅ KPI salvati ({_data_fmt}) — dettaglio non sovrascritto (data più recente già presente)")
                             st.rerun()
                     except Exception as _ex:
                         st.error(f"Errore: {_ex}")
@@ -965,66 +986,119 @@ with tab6:
             )
 
     # ══════════════════════════════════════════════════════════
-    # RIGA KPI — sessione se disponibile, altrimenti ultimo
-    # record dello storico Supabase (esclusi sabato/domenica)
+    # Helper KPI render
     # ══════════════════════════════════════════════════════════
-    def _kpi_from_storico(rec: dict):
-        """Mostra le KPI card partendo da un record dello storico."""
-        _tot  = rec.get("totale",   0) or 0
-        _rit  = rec.get("ritirati", 0) or 0
-        _ldv  = rec.get("ldv",      0) or 0
-        _ann  = rec.get("annullati",0) or 0
-        _ass  = rec.get("assenti",  0) or 0
-        _np   = rec.get("non_pronti",0) or 0
-        _pp   = float(rec.get("pct_p", 0) or 0)
-        _ps   = float(rec.get("pct_s", 0) or 0)
-        _pf   = float(rec.get("pct_f", 0) or 0)
-        _pu   = float(rec.get("pct_u", 0) or 0)
+    def _render_kpi_row(tot, rit, ldv, ann, ass, np_,
+                        pp, ps, pf, pu, label_suffix=""):
         k1, k2, k3, k4, k5, k6 = st.columns(6)
-        with k1: kpi_card("Totale Ritiri",   str(_tot), "#3b82f6")
-        with k2: kpi_card("Ritirati",         str(_rit), "#22c55e")
-        with k3: kpi_card("LDV Ritirate",    str(_ldv), "#22c55e")
-        with k4: kpi_card("Annullati",        str(_ann), "#ef4444")
-        with k5: kpi_card("Assenti",          str(_ass), "#f59e0b")
-        with k6: kpi_card("Merce Non Pronta", str(_np),  "#f59e0b")
+        with k1: kpi_card(f"Totale Ritiri{label_suffix}",   str(tot), "#3b82f6")
+        with k2: kpi_card(f"Ritirati{label_suffix}",         str(rit), "#22c55e")
+        with k3: kpi_card(f"LDV Ritirate{label_suffix}",    str(ldv), "#22c55e")
+        with k4: kpi_card(f"Annullati{label_suffix}",        str(ann), "#ef4444")
+        with k5: kpi_card(f"Assenti{label_suffix}",          str(ass), "#f59e0b")
+        with k6: kpi_card(f"Merce Non Pronta{label_suffix}", str(np_), "#f59e0b")
         st.markdown("<div style='margin:6px 0'></div>", unsafe_allow_html=True)
         _sp1, p1, p2, p3, p4, _sp2 = st.columns([1, 2, 2, 2, 2, 1])
-        with p1: kpi_card("% Poste", f"{_pp:.1%}", "#a855f7")
-        with p2: kpi_card("% SDA",   f"{_ps:.1%}", "#3b82f6")
-        with p3: kpi_card("% Fissi", f"{_pf:.1%}", "#22c55e")
-        with p4: kpi_card("% UPS",   f"{_pu:.1%}", "#f59e0b")
+        with p1: kpi_card("% Poste", f"{pp:.1%}", "#a855f7")
+        with p2: kpi_card("% SDA",   f"{ps:.1%}", "#3b82f6")
+        with p3: kpi_card("% Fissi", f"{pf:.1%}", "#22c55e")
+        with p4: kpi_card("% UPS",   f"{pu:.1%}", "#f59e0b")
 
-    if "ritiri_calc" in st.session_state:
-        # Dati da upload in sessione
+    # Determina quale sotto-tab è attivo tramite session_state
+    _rtab_active = st.session_state.get("ritiri_subtab", "storico")
+
+    # ── Selettore sotto-tab (usato anche per guidare le KPI) ──
+    _stab_cols = st.columns([2, 2, 2, 4])
+    with _stab_cols[0]:
+        if st.button("📅 Storico KPI",           use_container_width=True,
+                     type="primary" if _rtab_active == "storico"  else "secondary",
+                     key="btn_rtab_sto"):
+            st.session_state["ritiri_subtab"] = "storico";  st.rerun()
+    with _stab_cols[1]:
+        if st.button("📋 Dettaglio Ultimo Giorno", use_container_width=True,
+                     type="primary" if _rtab_active == "dettaglio" else "secondary",
+                     key="btn_rtab_det"):
+            st.session_state["ritiri_subtab"] = "dettaglio"; st.rerun()
+    with _stab_cols[2]:
+        if st.button("📊 Pivot Tipologie",        use_container_width=True,
+                     type="primary" if _rtab_active == "pivot"    else "secondary",
+                     key="btn_rtab_piv"):
+            st.session_state["ritiri_subtab"] = "pivot";     st.rerun()
+
+    st.markdown("<div style='margin:4px 0'></div>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════
+    # KPI CARD — cambiano in base al sotto-tab attivo
+    # ══════════════════════════════════════════════════════════
+
+    # Prepara dati feriali dello storico (serve per medie e per ultimo giorno)
+    _df_fer = None
+    if _storico_rows_preload:
+        _df_fer = pd.DataFrame(_storico_rows_preload)
+        _df_fer["_dow"] = pd.to_datetime(_df_fer["data_riferimento"]).dt.dayofweek
+        _df_fer = _df_fer[_df_fer["_dow"] < 5].drop(columns=["_dow"])
+
+    if _rtab_active == "storico" and _df_fer is not None and not _df_fer.empty:
+        # Medie su tutti i giorni feriali
+        _n = len(_df_fer)
+        _avg = lambda col: int(round(_df_fer[col].fillna(0).astype(float).sum() / _n))
+        _avgf= lambda col: _df_fer[col].fillna(0).astype(float).mean()
+        st.caption(f"📊 Valori medi su **{_n} giorni** feriali")
+        _render_kpi_row(
+            _avg("totale"), _avg("ritirati"), _avg("ldv"),
+            _avg("annullati"), _avg("assenti"), _avg("non_pronti"),
+            _avgf("pct_p"), _avgf("pct_s"), _avgf("pct_f"), _avgf("pct_u"),
+        )
+
+    elif _rtab_active == "dettaglio" and _df_fer is not None and not _df_fer.empty:
+        # Ultimo giorno feriale disponibile
+        _ult = _df_fer.sort_values("data_riferimento", ascending=False).iloc[0]
+        _data_ult = pd.to_datetime(_ult["data_riferimento"]).strftime("%d/%m/%Y")
+        st.caption(f"📋 Valori del **{_data_ult}** (ultimo giorno feriale disponibile)")
+        _render_kpi_row(
+            int(_ult.get("totale",    0) or 0),
+            int(_ult.get("ritirati",  0) or 0),
+            int(_ult.get("ldv",       0) or 0),
+            int(_ult.get("annullati", 0) or 0),
+            int(_ult.get("assenti",   0) or 0),
+            int(_ult.get("non_pronti",0) or 0),
+            float(_ult.get("pct_p", 0) or 0),
+            float(_ult.get("pct_s", 0) or 0),
+            float(_ult.get("pct_f", 0) or 0),
+            float(_ult.get("pct_u", 0) or 0),
+        )
+
+    elif _rtab_active == "pivot" and "ritiri_calc" in st.session_state:
+        # Dati dal file caricato in sessione
         _c = st.session_state["ritiri_calc"]
         _n_rit = _c["lav_p"] + _c["rit_s"] + _c["lav_f"] + _c["rit_u"]
         _n_ann = _c["totale"] - len(_c["valide"])
         _n_ass = sum(_c["pivot"].get(t, {}).get("CLIENTE ASSENTE",  0) for t in _TUTTE_TIP)
         _n_np  = sum(_c["pivot"].get(t, {}).get("MERCE NON PRONTA", 0) for t in _TUTTE_TIP)
-        k1, k2, k3, k4, k5, k6 = st.columns(6)
-        with k1: kpi_card("Totale Ritiri",   str(_c["totale"]), "#3b82f6")
-        with k2: kpi_card("Ritirati",         str(_n_rit),       "#22c55e")
-        with k3: kpi_card("LDV Ritirate",    str(_c["n_ldv"]),  "#22c55e")
-        with k4: kpi_card("Annullati",        str(_n_ann),       "#ef4444")
-        with k5: kpi_card("Assenti",          str(_n_ass),       "#f59e0b")
-        with k6: kpi_card("Merce Non Pronta", str(_n_np),        "#f59e0b")
-        st.markdown("<div style='margin:6px 0'></div>", unsafe_allow_html=True)
-        _sp1, p1, p2, p3, p4, _sp2 = st.columns([1, 2, 2, 2, 2, 1])
-        with p1: kpi_card("% Poste", f"{_c['pct_p']:.1%}", "#a855f7")
-        with p2: kpi_card("% SDA",   f"{_c['pct_s']:.1%}", "#3b82f6")
-        with p3: kpi_card("% Fissi", f"{_c['pct_f']:.1%}", "#22c55e")
-        with p4: kpi_card("% UPS",   f"{_c['pct_u']:.1%}", "#f59e0b")
-
-    elif _storico_rows_preload:
-        # Fallback: ultimo giorno feriale disponibile nello storico
-        _ultimo_feriale = next(
-            (r for r in _storico_rows_preload
-             if pd.to_datetime(r["data_riferimento"]).dayofweek < 5),
-            _storico_rows_preload[0],
+        _data_s = st.session_state.get("ritiri_data_rif", "")
+        st.caption(f"📂 Valori del file caricato{' — ' + _data_s if _data_s else ''}")
+        _render_kpi_row(
+            _c["totale"], _n_rit, _c["n_ldv"], _n_ann, _n_ass, _n_np,
+            _c["pct_p"], _c["pct_s"], _c["pct_f"], _c["pct_u"],
         )
-        _data_ult = pd.to_datetime(_ultimo_feriale["data_riferimento"]).strftime("%d/%m/%Y")
-        st.caption(f"ℹ️ Dati più recenti disponibili: **{_data_ult}**")
-        _kpi_from_storico(_ultimo_feriale)
+
+    elif _df_fer is not None and not _df_fer.empty:
+        # Fallback generico: ultimo giorno feriale
+        _ult = _df_fer.sort_values("data_riferimento", ascending=False).iloc[0]
+        _data_ult = pd.to_datetime(_ult["data_riferimento"]).strftime("%d/%m/%Y")
+        st.caption(f"ℹ️ Ultimo giorno disponibile: **{_data_ult}**")
+        _render_kpi_row(
+            int(_ult.get("totale",    0) or 0),
+            int(_ult.get("ritirati",  0) or 0),
+            int(_ult.get("ldv",       0) or 0),
+            int(_ult.get("annullati", 0) or 0),
+            int(_ult.get("assenti",   0) or 0),
+            int(_ult.get("non_pronti",0) or 0),
+            float(_ult.get("pct_p", 0) or 0),
+            float(_ult.get("pct_s", 0) or 0),
+            float(_ult.get("pct_f", 0) or 0),
+            float(_ult.get("pct_u", 0) or 0),
+        )
 
     else:
         st.markdown(
@@ -1037,17 +1111,8 @@ with tab6:
 
     st.markdown("---")
 
-    # ══════════════════════════════════════════════════════════
-    # SOTTO-TAB: Storico | Dettaglio | Pivot
-    # ══════════════════════════════════════════════════════════
-    rtab1, rtab2, rtab3 = st.tabs([
-        "📅 Storico KPI",
-        "📋 Dettaglio Ultimo Giorno",
-        "📊 Pivot Tipologie",
-    ])
-
     # ── Storico KPI ───────────────────────────────────────────
-    with rtab1:
+    if _rtab_active == "storico":
         _rc1, _rc2 = st.columns([6, 1])
         with _rc2:
             if st.button("🔄 Aggiorna", key="btn_refresh_sto"):
@@ -1133,10 +1198,10 @@ with tab6:
                                file_name="storico_ritiri.csv", mime="text/csv")
 
     # ── Dettaglio Ultimo Giorno ───────────────────────────────
-    with rtab2:
+    elif _rtab_active == "dettaglio":
         st.caption(
             "Righe raw dell'**ultimo file pubblicato**. "
-            "Al caricamento successivo vengono automaticamente sostituite."
+            "Al caricamento successivo con data più recente vengono automaticamente sostituite."
         )
         _rd1, _rd2 = st.columns([6, 1])
         with _rd2:
@@ -1188,7 +1253,7 @@ with tab6:
                                    mime="text/csv")
 
     # ── Pivot Tipologie ───────────────────────────────────────
-    with rtab3:
+    elif _rtab_active == "pivot":
         if "ritiri_calc" not in st.session_state:
             st.info("Carica un file dalla barra laterale per vedere il pivot.")
         else:
