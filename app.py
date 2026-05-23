@@ -388,28 +388,35 @@ with st.sidebar:
     st.markdown("## 📦 Dashboard Performance")
     progetto_attivo = st.secrets.get("PROGETTO", "—")
     st.markdown(f"🗂 **Progetto:** `{progetto_attivo}`")
-    st.markdown("---")
 
-    # ── SEZIONE IMPORTA DATI ──
-    st.markdown("### 📥 Importa Dati")
+    # ══════════════════════════════════════════
+    # BLOCCO 1 — CORRIERI / PERFORMANCE SDA
+    # ══════════════════════════════════════════
+    st.markdown("""
+    <div style="background:#1e2330;border:1px solid #3b82f6;border-radius:8px;
+                padding:8px 12px 4px;margin:10px 0 6px;">
+        <span style="color:#3b82f6;font-weight:700;font-size:0.95rem;">
+            🚚 PERFORMANCE CORRIERI
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.caption("Carica un file Excel: i dati vengono accodati a quelli esistenti su Supabase.")
-
-    uploaded = st.file_uploader("Seleziona file Excel", type=["xlsx", "xls"])
+    uploaded = st.file_uploader("Seleziona file Excel corrieri", type=["xlsx", "xls"],
+                                key="up_corrieri")
     if uploaded:
-        if st.button("⬆ Importa su Supabase", use_container_width=True, type="primary"):
+        if st.button("⬆ Importa su Supabase", use_container_width=True, type="primary",
+                     key="btn_importa_corrieri"):
             with st.spinner("Lettura e importazione in corso..."):
                 try:
                     dati_nuovi = leggi_file_corrieri(uploaded)
                     n_righe = importa_su_supabase(dati_nuovi)
                     st.success(f"✅ {n_righe} record importati!")
-                    st.session_state.dati = None  # forza ricaricamento dal DB
+                    st.session_state.dati = None
                     st.rerun()
                 except Exception as e:
                     st.error(f"Errore importazione: {e}")
 
-    st.markdown("---")
-
-    # ── CARICA DATI DA SUPABASE ──
     if st.session_state.dati is None:
         with st.spinner("Caricamento dati da Supabase..."):
             try:
@@ -421,22 +428,23 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Errore connessione Supabase: {e}")
 
-    if st.button("🔄 Ricarica da Supabase", use_container_width=True):
+    if st.button("🔄 Ricarica da Supabase", use_container_width=True,
+                 key="btn_ricarica_corrieri"):
         st.session_state.dati = None
         st.rerun()
 
-    st.markdown("---")
-
-    # ── FILTRO DATE ──
+    # ── Filtro date corrieri ──
     if st.session_state.dati:
         tutte_date = sorted({d for fil in st.session_state.dati.values() for d in fil})
         if tutte_date:
             st.markdown("### 📅 Periodo")
             col1, col2 = st.columns(2)
             with col1:
-                date_da = st.date_input("Dal", value=tutte_date[0], min_value=tutte_date[0], max_value=tutte_date[-1])
+                date_da = st.date_input("Dal", value=tutte_date[0],
+                                        min_value=tutte_date[0], max_value=tutte_date[-1])
             with col2:
-                date_a = st.date_input("Al", value=tutte_date[-1], min_value=tutte_date[0], max_value=tutte_date[-1])
+                date_a = st.date_input("Al", value=tutte_date[-1],
+                                       min_value=tutte_date[0], max_value=tutte_date[-1])
             st.session_state.date_da = date_da
             st.session_state.date_a  = date_a
             c1, c2, c3 = st.columns(3)
@@ -454,6 +462,63 @@ with st.sidebar:
                     st.session_state.date_da = tutte_date[0]
                     st.session_state.date_a  = tutte_date[-1]
                     st.rerun()
+
+    # ══════════════════════════════════════════
+    # BLOCCO 2 — RITIRI
+    # ══════════════════════════════════════════
+    st.markdown("""
+    <div style="background:#1e2330;border:1px solid #a855f7;border-radius:8px;
+                padding:8px 12px 4px;margin:18px 0 6px;">
+        <span style="color:#a855f7;font-weight:700;font-size:0.95rem;">
+            📦 RITIRI
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _filiale_ritiri_sb = st.secrets.get("FILIALE_RITIRI", "")
+    if not _filiale_ritiri_sb:
+        st.caption("⚠️ Aggiungi `FILIALE_RITIRI` nei secrets per abilitare.")
+    else:
+        st.caption(f"Filiale: **{_filiale_ritiri_sb}** — carica il file giornaliero e pubblica sulla dashboard.")
+        up_ritiri_sb = st.file_uploader(
+            "Seleziona file ritiri (xlsx / xls / csv)",
+            type=["xlsx", "xls", "csv"],
+            key="up_ritiri_sb",
+        )
+        if up_ritiri_sb:
+            data_rif_sb = st.date_input(
+                "Data di riferimento",
+                value=date.today(),
+                key="data_rif_ritiri_sb",
+            )
+            if st.button("⬆️ Calcola & Pubblica Ritiri",
+                         type="primary", use_container_width=True,
+                         key="btn_pubblica_ritiri_sb"):
+                with st.spinner("Elaborazione in corso..."):
+                    try:
+                        _righe_sb  = _leggi_ritiri(up_ritiri_sb)
+                        if not _righe_sb:
+                            st.error("Nessun dato trovato nel file.")
+                        else:
+                            _calc_sb = _calcola_ritiri(_righe_sb)
+                            _n_pub   = _pubblica_ritiri(
+                                _righe_sb, _calc_sb,
+                                up_ritiri_sb.name,
+                                _filiale_ritiri_sb,
+                                data_rif_sb.isoformat(),
+                            )
+                            _carica_storico_ritiri.clear()
+                            _carica_dettaglio_ritiri.clear()
+                            st.session_state["ritiri_calc"]  = _calc_sb
+                            st.session_state["ritiri_righe"] = _righe_sb
+                            st.session_state["ritiri_data_rif"] = data_rif_sb.strftime("%d/%m/%Y")
+                            st.success(
+                                f"✅ {_n_pub} righe pubblicate "
+                                f"({data_rif_sb.strftime('%d/%m/%Y')})"
+                            )
+                            st.rerun()
+                    except Exception as _ex:
+                        st.error(f"Errore: {_ex}")
 
 if not st.session_state.dati:
     st.info("👈 Importa un file Excel dalla barra laterale, oppure attendi il caricamento da Supabase.")
@@ -842,9 +907,7 @@ with tab5:
 # TAB 6 — RITIRI
 # ══════════════════════════════════════════════════════════════
 with tab6:
-    st.markdown("### 📦 Calcolo & Storico Ritiri")
 
-    # ── Filiale ritiri dai secrets ─────────────────────────────
     filiale_ritiri = st.secrets.get("FILIALE_RITIRI", "")
     if not filiale_ritiri:
         st.warning(
@@ -853,257 +916,231 @@ with tab6:
         )
         st.stop()
 
-    col_sx, col_dx = st.columns([1, 2])
+    # ── Header ────────────────────────────────────────────────
+    _th1, _th2 = st.columns([3, 1])
+    with _th1:
+        st.markdown("### 📦 Ritiri")
+    with _th2:
+        if "ritiri_calc" in st.session_state:
+            _c_hdr = st.session_state["ritiri_calc"]
+            _data_hdr = st.session_state.get("ritiri_data_rif", "")
+            if _data_hdr:
+                st.markdown(
+                    f"<div style='text-align:right;color:#94a3b8;font-size:0.85rem;"
+                    f"padding-top:10px'>Ultimo caricamento: <b>{_data_hdr}</b></div>",
+                    unsafe_allow_html=True,
+                )
 
-    # ─────────────────────────────────────────────────────────
-    # COLONNA SX — Carica file + pubblica
-    # ─────────────────────────────────────────────────────────
-    with col_sx:
-        st.markdown("#### 📥 Carica File Ritiri")
-        up_ritiri = st.file_uploader(
-            "File giornaliero (xlsx / xls / csv)",
-            type=["xlsx", "xls", "csv"],
-            key="up_ritiri",
+    # ══════════════════════════════════════════════════════════
+    # RIGA KPI — visibile sempre (dati da sessione o placeholder)
+    # ══════════════════════════════════════════════════════════
+    if "ritiri_calc" in st.session_state:
+        _c = st.session_state["ritiri_calc"]
+        _n_rit = _c["lav_p"] + _c["rit_s"] + _c["lav_f"] + _c["rit_u"]
+        _n_ann = _c["totale"] - len(_c["valide"])
+        _n_ass = sum(_c["pivot"].get(t, {}).get("CLIENTE ASSENTE",  0) for t in _TUTTE_TIP)
+        _n_np  = sum(_c["pivot"].get(t, {}).get("MERCE NON PRONTA", 0) for t in _TUTTE_TIP)
+
+        # ── Riga 1: 6 KPI operativi ───────────────────────────
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
+        with k1: kpi_card("Totale Ritiri",    str(_c["totale"]),  "#3b82f6")
+        with k2: kpi_card("Ritirati",          str(_n_rit),        "#22c55e")
+        with k3: kpi_card("LDV Ritirate",     str(_c["n_ldv"]),   "#22c55e")
+        with k4: kpi_card("Annullati",         str(_n_ann),        "#ef4444")
+        with k5: kpi_card("Assenti",           str(_n_ass),        "#f59e0b")
+        with k6: kpi_card("Merce Non Pronta",  str(_n_np),         "#f59e0b")
+
+        st.markdown("<div style='margin:6px 0'></div>", unsafe_allow_html=True)
+
+        # ── Riga 2: 4 KPI % categoria (centrate con spacer) ───
+        _sp1, p1, p2, p3, p4, _sp2 = st.columns([1, 2, 2, 2, 2, 1])
+        with p1: kpi_card("% Poste", f"{_c['pct_p']:.1%}", "#a855f7")
+        with p2: kpi_card("% SDA",   f"{_c['pct_s']:.1%}", "#3b82f6")
+        with p3: kpi_card("% Fissi", f"{_c['pct_f']:.1%}", "#22c55e")
+        with p4: kpi_card("% UPS",   f"{_c['pct_u']:.1%}", "#f59e0b")
+    else:
+        st.markdown(
+            "<div style='background:#1e2330;border:1px dashed #2a3045;border-radius:10px;"
+            "padding:18px;text-align:center;color:#475569;font-size:0.9rem;margin-bottom:8px'>"
+            "📂 Carica un file dalla barra laterale per visualizzare i KPI"
+            "</div>",
+            unsafe_allow_html=True,
         )
 
-        if up_ritiri:
-            data_rif_input = st.date_input(
-                "Data di riferimento",
-                value=date.today(),
-                key="data_rif_ritiri",
-            )
+    st.markdown("---")
 
-            if st.button("⬆️ Calcola & Pubblica su Dashboard",
-                         type="primary", use_container_width=True):
-                with st.spinner("Lettura, calcolo e pubblicazione in corso..."):
-                    try:
-                        righe_r = _leggi_ritiri(up_ritiri)
-                        if not righe_r:
-                            st.error("Nessun dato trovato nel file.")
-                        else:
-                            calc_r = _calcola_ritiri(righe_r)
-                            n_pub  = _pubblica_ritiri(
-                                righe_r, calc_r,
-                                up_ritiri.name,
-                                filiale_ritiri,
-                                data_rif_input.isoformat(),
-                            )
-                            _carica_storico_ritiri.clear()
-                            _carica_dettaglio_ritiri.clear()
-                            st.success(
-                                f"✅ Pubblicati {n_pub} righe dettaglio "
-                                f"e KPI per il {data_rif_input.strftime('%d/%m/%Y')}"
-                            )
-                            st.session_state["ritiri_calc"]  = calc_r
-                            st.session_state["ritiri_righe"] = righe_r
-                            st.rerun()
-                    except Exception as ex:
-                        st.error(f"Errore: {ex}")
+    # ══════════════════════════════════════════════════════════
+    # SOTTO-TAB: Storico | Dettaglio | Pivot
+    # ══════════════════════════════════════════════════════════
+    rtab1, rtab2, rtab3 = st.tabs([
+        "📅 Storico KPI",
+        "📋 Dettaglio Ultimo Giorno",
+        "📊 Pivot Tipologie",
+    ])
 
-        # ── KPI calcolati in sessione (dopo upload) ────────────
-        if "ritiri_calc" in st.session_state:
-            c = st.session_state["ritiri_calc"]
-            n_ritirati = c["lav_p"] + c["rit_s"] + c["lav_f"] + c["rit_u"]
-            n_ann      = c["totale"] - len(c["valide"])
-            n_ass      = sum(c["pivot"].get(t, {}).get("CLIENTE ASSENTE",  0) for t in _TUTTE_TIP)
-            n_np       = sum(c["pivot"].get(t, {}).get("MERCE NON PRONTA", 0) for t in _TUTTE_TIP)
-
-            st.markdown("---")
-            st.markdown("##### KPI file corrente")
-            m1, m2 = st.columns(2)
-            with m1: kpi_card("Totale Ritiri",    str(c["totale"]),   "#3b82f6")
-            with m2: kpi_card("Ritirati",          str(n_ritirati),   "#22c55e")
-            m3, m4 = st.columns(2)
-            with m3: kpi_card("LDV Ritirate",     str(c["n_ldv"]),    "#22c55e")
-            with m4: kpi_card("Annullati",         str(n_ann),         "#ef4444")
-            m5, m6 = st.columns(2)
-            with m5: kpi_card("Assenti",           str(n_ass),         "#f59e0b")
-            with m6: kpi_card("Merce Non Pronta",  str(n_np),          "#f59e0b")
-
-            st.markdown("##### % per Categoria")
-            p1, p2, p3, p4 = st.columns(4)
-            with p1: kpi_card("Poste", f"{c['pct_p']:.1%}", "#a855f7")
-            with p2: kpi_card("SDA",   f"{c['pct_s']:.1%}", "#3b82f6")
-            with p3: kpi_card("Fissi", f"{c['pct_f']:.1%}", "#22c55e")
-            with p4: kpi_card("UPS",   f"{c['pct_u']:.1%}", "#f59e0b")
-
-    # ─────────────────────────────────────────────────────────
-    # COLONNA DX — Storico / Dettaglio / Pivot
-    # ─────────────────────────────────────────────────────────
-    with col_dx:
-        rtab1, rtab2, rtab3 = st.tabs([
-            "📅 Storico KPI",
-            "📋 Dettaglio Ultimo Giorno",
-            "📊 Pivot Tipologie",
-        ])
-
-        # ── Storico KPI ───────────────────────────────────────
-        with rtab1:
-            if st.button("🔄 Aggiorna Storico", key="btn_refresh_sto"):
+    # ── Storico KPI ───────────────────────────────────────────
+    with rtab1:
+        _rc1, _rc2 = st.columns([6, 1])
+        with _rc2:
+            if st.button("🔄 Aggiorna", key="btn_refresh_sto"):
                 _carica_storico_ritiri.clear()
 
-            storico_rows = _carica_storico_ritiri(filiale_ritiri)
+        storico_rows = _carica_storico_ritiri(filiale_ritiri)
 
-            if not storico_rows:
-                st.info("Nessun dato nello storico. Pubblica il primo file per iniziare.")
-            else:
-                df_sto = pd.DataFrame(storico_rows)
+        if not storico_rows:
+            st.info("Nessun dato nello storico. Pubblica il primo file dalla barra laterale.")
+        else:
+            df_sto = pd.DataFrame(storico_rows)
+            df_chart = df_sto.sort_values("data_riferimento")
 
-                st.markdown("#### Trend % Ritiro per Categoria")
-                df_chart = df_sto.sort_values("data_riferimento")
-                fig_trend_r = go.Figure()
-                for col_pct, nome, colore in [
-                    ("pct_p", "Poste", "#a855f7"),
-                    ("pct_s", "SDA",   "#3b82f6"),
-                    ("pct_f", "Fissi", "#22c55e"),
-                    ("pct_u", "UPS",   "#f59e0b"),
-                ]:
-                    if col_pct in df_chart.columns:
-                        fig_trend_r.add_trace(go.Scatter(
-                            x=df_chart["data_riferimento"],
-                            y=(df_chart[col_pct].astype(float) * 100).round(1),
-                            name=nome,
-                            mode="lines+markers",
-                            line=dict(color=colore, width=2),
-                            marker=dict(size=5),
-                        ))
-                fig_trend_r.update_layout(
-                    **LAYOUT_DARK, height=260,
-                    xaxis=dict(gridcolor="#2a3045"),
-                    yaxis=dict(gridcolor="#2a3045", ticksuffix="%", range=[0, 105]),
-                )
-                st.plotly_chart(fig_trend_r, use_container_width=True)
-
-                st.markdown("#### Storico KPI")
-                cols_show = ["data_riferimento", "nome_file", "totale", "valide",
-                             "ritirati", "ldv", "assenti", "non_pronti",
-                             "pct_p", "pct_s", "pct_f", "pct_u"]
-                cols_show = [c for c in cols_show if c in df_sto.columns]
-                df_sto_tab = df_sto[cols_show].copy()
-                for pc in ["pct_p", "pct_s", "pct_f", "pct_u"]:
-                    if pc in df_sto_tab.columns:
-                        df_sto_tab[pc] = df_sto_tab[pc].apply(
-                            lambda v: f"{float(v):.1%}" if v is not None else "—")
-                rename_map = {
-                    "data_riferimento": "Data", "nome_file": "File",
-                    "totale": "Totali",         "valide": "Valide",
-                    "ritirati": "Ritirati",     "ldv": "LDV",
-                    "assenti": "Assenti",        "non_pronti": "Non Pronti",
-                    "pct_p": "% Poste",          "pct_s": "% SDA",
-                    "pct_f": "% Fissi",          "pct_u": "% UPS",
-                }
-                df_sto_tab.rename(columns=rename_map, inplace=True)
-                st.dataframe(df_sto_tab, use_container_width=True, hide_index=True)
-
-                csv_sto = df_sto_tab.to_csv(index=False, sep=";").encode("utf-8-sig")
-                st.download_button("⬇ Scarica CSV Storico", data=csv_sto,
-                                   file_name="storico_ritiri.csv", mime="text/csv")
-
-        # ── Dettaglio Ultimo Giorno ────────────────────────────
-        with rtab2:
-            st.caption(
-                "Righe raw dell'**ultimo file pubblicato**. "
-                "Al caricamento successivo vengono automaticamente sostituite."
+            fig_trend_r = go.Figure()
+            for _col_pct, _nome, _col in [
+                ("pct_p", "Poste", "#a855f7"),
+                ("pct_s", "SDA",   "#3b82f6"),
+                ("pct_f", "Fissi", "#22c55e"),
+                ("pct_u", "UPS",   "#f59e0b"),
+            ]:
+                if _col_pct in df_chart.columns:
+                    fig_trend_r.add_trace(go.Scatter(
+                        x=df_chart["data_riferimento"],
+                        y=(df_chart[_col_pct].astype(float) * 100).round(1),
+                        name=_nome,
+                        mode="lines+markers",
+                        line=dict(color=_col, width=2),
+                        marker=dict(size=6),
+                    ))
+            fig_trend_r.update_layout(
+                **LAYOUT_DARK, height=280,
+                xaxis=dict(gridcolor="#2a3045"),
+                yaxis=dict(gridcolor="#2a3045", ticksuffix="%", range=[0, 105]),
             )
-            if st.button("🔄 Aggiorna Dettaglio", key="btn_refresh_det"):
+            st.plotly_chart(fig_trend_r, use_container_width=True)
+
+            _cols_s = ["data_riferimento", "nome_file", "totale", "valide",
+                       "ritirati", "ldv", "assenti", "non_pronti",
+                       "pct_p", "pct_s", "pct_f", "pct_u"]
+            _cols_s   = [c for c in _cols_s if c in df_sto.columns]
+            df_sto_tab = df_sto[_cols_s].copy()
+            for _pc in ["pct_p", "pct_s", "pct_f", "pct_u"]:
+                if _pc in df_sto_tab.columns:
+                    df_sto_tab[_pc] = df_sto_tab[_pc].apply(
+                        lambda v: f"{float(v):.1%}" if v is not None else "—")
+            df_sto_tab.rename(columns={
+                "data_riferimento": "Data",    "nome_file":  "File",
+                "totale":  "Totali",           "valide":     "Valide",
+                "ritirati": "Ritirati",        "ldv":        "LDV",
+                "assenti":  "Assenti",         "non_pronti": "Non Pronti",
+                "pct_p":   "% Poste",          "pct_s":      "% SDA",
+                "pct_f":   "% Fissi",          "pct_u":      "% UPS",
+            }, inplace=True)
+            st.dataframe(df_sto_tab, use_container_width=True, hide_index=True)
+            _csv_s = df_sto_tab.to_csv(index=False, sep=";").encode("utf-8-sig")
+            st.download_button("⬇ Scarica CSV Storico", data=_csv_s,
+                               file_name="storico_ritiri.csv", mime="text/csv")
+
+    # ── Dettaglio Ultimo Giorno ───────────────────────────────
+    with rtab2:
+        st.caption(
+            "Righe raw dell'**ultimo file pubblicato**. "
+            "Al caricamento successivo vengono automaticamente sostituite."
+        )
+        _rd1, _rd2 = st.columns([6, 1])
+        with _rd2:
+            if st.button("🔄 Aggiorna", key="btn_refresh_det"):
                 _carica_dettaglio_ritiri.clear()
 
-            det_rows = _carica_dettaglio_ritiri(filiale_ritiri)
+        det_rows = _carica_dettaglio_ritiri(filiale_ritiri)
 
-            if not det_rows:
-                st.info("Nessun dettaglio. Pubblica un file per visualizzarlo.")
-            else:
-                data_det = det_rows[0].get("data_riferimento", "")[:10]
-                st.markdown(f"**Riferimento:** `{data_det}` — **{len(det_rows)} righe**")
+        if not det_rows:
+            st.info("Nessun dettaglio. Pubblica un file dalla barra laterale.")
+        else:
+            data_det = det_rows[0].get("data_riferimento", "")[:10]
+            st.markdown(f"**Riferimento:** `{data_det}` &nbsp;—&nbsp; **{len(det_rows)} righe**")
 
-                fc1, fc2, fc3 = st.columns(3)
-                with fc1:
-                    stati_u = sorted({r.get("stato_ritiro","") for r in det_rows if r.get("stato_ritiro")})
-                    filtro_stato = st.selectbox("Stato Ritiro", ["Tutti"] + stati_u, key="filt_stato_det")
-                with fc2:
-                    tipi_u = sorted({r.get("tipologia","") for r in det_rows if r.get("tipologia")})
-                    filtro_tipo = st.selectbox("Tipologia", ["Tutte"] + tipi_u, key="filt_tipo_det")
-                with fc3:
-                    giri_u = sorted({r.get("giro","") for r in det_rows if r.get("giro")},
-                                    key=lambda x: int(x) if x.isdigit() else 999)
-                    filtro_giro = st.selectbox("Giro", ["Tutti"] + giri_u, key="filt_giro_det")
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1:
+                _stati_u = sorted({r.get("stato_ritiro","") for r in det_rows if r.get("stato_ritiro")})
+                _f_stato = st.selectbox("Stato Ritiro", ["Tutti"] + _stati_u, key="filt_stato_det")
+            with fc2:
+                _tipi_u = sorted({r.get("tipologia","") for r in det_rows if r.get("tipologia")})
+                _f_tipo = st.selectbox("Tipologia", ["Tutte"] + _tipi_u, key="filt_tipo_det")
+            with fc3:
+                _giri_u = sorted({r.get("giro","") for r in det_rows if r.get("giro")},
+                                  key=lambda x: int(x) if x.isdigit() else 999)
+                _f_giro = st.selectbox("Giro", ["Tutti"] + _giri_u, key="filt_giro_det")
 
-                det_filtrate = [
-                    r for r in det_rows
-                    if (filtro_stato == "Tutti" or r.get("stato_ritiro","") == filtro_stato)
-                    and (filtro_tipo  == "Tutte" or r.get("tipologia","")   == filtro_tipo)
-                    and (filtro_giro  == "Tutti" or r.get("giro","")        == filtro_giro)
-                ]
-                st.caption(f"{len(det_filtrate)} / {len(det_rows)} righe")
+            _det_f = [
+                r for r in det_rows
+                if (_f_stato == "Tutti" or r.get("stato_ritiro","") == _f_stato)
+                and (_f_tipo  == "Tutte" or r.get("tipologia","")   == _f_tipo)
+                and (_f_giro  == "Tutti" or r.get("giro","")        == _f_giro)
+            ]
+            st.caption(f"{len(_det_f)} / {len(det_rows)} righe")
 
-                cols_det = ["tipologia", "ragione_sociale", "stato_ritiro",
-                            "giro", "data_ritiro", "lv_ritirate", "note_corriere"]
-                df_det = pd.DataFrame([
-                    {c: r.get(c,"") for c in cols_det} for r in det_filtrate
-                ])
-                if not df_det.empty:
-                    df_det.rename(columns={
-                        "tipologia": "Tipologia", "ragione_sociale": "Ragione Sociale",
-                        "stato_ritiro": "Stato Ritiro", "giro": "Giro",
-                        "data_ritiro": "Data", "lv_ritirate": "LV",
-                        "note_corriere": "Note",
-                    }, inplace=True)
-                    st.dataframe(df_det, use_container_width=True, hide_index=True)
-                    csv_det = df_det.to_csv(index=False, sep=";").encode("utf-8-sig")
-                    st.download_button(
-                        "⬇ Scarica CSV Dettaglio", data=csv_det,
-                        file_name=f"dettaglio_ritiri_{data_det}.csv",
-                        mime="text/csv")
+            _cols_d = ["tipologia","ragione_sociale","stato_ritiro",
+                       "giro","data_ritiro","lv_ritirate","note_corriere"]
+            df_det = pd.DataFrame([{c: r.get(c,"") for c in _cols_d} for r in _det_f])
+            if not df_det.empty:
+                df_det.rename(columns={
+                    "tipologia": "Tipologia", "ragione_sociale": "Ragione Sociale",
+                    "stato_ritiro": "Stato Ritiro", "giro": "Giro",
+                    "data_ritiro": "Data", "lv_ritirate": "LV",
+                    "note_corriere": "Note",
+                }, inplace=True)
+                st.dataframe(df_det, use_container_width=True, hide_index=True)
+                _csv_d = df_det.to_csv(index=False, sep=";").encode("utf-8-sig")
+                st.download_button("⬇ Scarica CSV Dettaglio", data=_csv_d,
+                                   file_name=f"dettaglio_ritiri_{data_det}.csv",
+                                   mime="text/csv")
 
-        # ── Pivot Tipologie (da sessione) ──────────────────────
-        with rtab3:
-            if "ritiri_calc" not in st.session_state:
-                st.info("Carica un file a sinistra per vedere il pivot.")
-            else:
-                c = st.session_state["ritiri_calc"]
-                pivot = c["pivot"]
+    # ── Pivot Tipologie ───────────────────────────────────────
+    with rtab3:
+        if "ritiri_calc" not in st.session_state:
+            st.info("Carica un file dalla barra laterale per vedere il pivot.")
+        else:
+            _c3    = st.session_state["ritiri_calc"]
+            _pivot = _c3["pivot"]
 
-                righe_piv = []
-                for tip in _TUTTE_TIP:
-                    row = {"Tipologia": tip}
-                    tot = 0
-                    for stato in _STATI_ESITO:
-                        v = pivot.get(tip, {}).get(stato, 0)
-                        row[stato] = int(v) if v else None
-                        tot += v
-                    row["TOTALE"] = int(tot) if tot else None
-                    if tot:
-                        righe_piv.append(row)
+            _righe_piv = []
+            for _tip in _TUTTE_TIP:
+                _row = {"Tipologia": _tip}
+                _tot = 0
+                for _stato in _STATI_ESITO:
+                    _v = _pivot.get(_tip, {}).get(_stato, 0)
+                    _row[_stato] = int(_v) if _v else None
+                    _tot += _v
+                _row["TOTALE"] = int(_tot) if _tot else None
+                if _tot:
+                    _righe_piv.append(_row)
 
-                if righe_piv:
-                    row_tot = {"Tipologia": "TOTALE COMPLESSIVO"}
-                    for stato in _STATI_ESITO:
-                        v = sum(pivot.get(t, {}).get(stato, 0) for t in _TUTTE_TIP)
-                        row_tot[stato] = int(v) if v else None
-                    row_tot["TOTALE"] = sum(
-                        v for v in row_tot.values() if isinstance(v, int)) or None
-                    righe_piv.append(row_tot)
+            if _righe_piv:
+                _row_tot = {"Tipologia": "TOTALE COMPLESSIVO"}
+                for _stato in _STATI_ESITO:
+                    _v = sum(_pivot.get(t, {}).get(_stato, 0) for t in _TUTTE_TIP)
+                    _row_tot[_stato] = int(_v) if _v else None
+                _row_tot["TOTALE"] = sum(
+                    v for v in _row_tot.values() if isinstance(v, int)) or None
+                _righe_piv.append(_row_tot)
+                df_piv = pd.DataFrame(_righe_piv).fillna("")
+                st.dataframe(df_piv, use_container_width=True, hide_index=True)
 
-                    df_piv = pd.DataFrame(righe_piv).fillna("")
-                    st.dataframe(df_piv, use_container_width=True, hide_index=True)
-
-                st.markdown("#### % Ritiro per Categoria")
-                cat_data = [
-                    ("Poste", c["pct_p"], "#a855f7"),
-                    ("SDA",   c["pct_s"], "#3b82f6"),
-                    ("Fissi", c["pct_f"], "#22c55e"),
-                    ("UPS",   c["pct_u"], "#f59e0b"),
-                ]
-                fig_cat = go.Figure([go.Bar(
-                    x=[d[0] for d in cat_data],
-                    y=[round(d[1] * 100, 1) for d in cat_data],
-                    marker_color=[d[2] for d in cat_data],
-                    text=[f"{d[1]:.1%}" for d in cat_data],
-                    textposition="outside",
-                )])
-                fig_cat.update_layout(
-                    **LAYOUT_DARK, height=280,
-                    yaxis=dict(gridcolor="#2a3045", ticksuffix="%", range=[0, 115]),
-                    xaxis=dict(gridcolor="#2a3045"),
-                )
-                st.plotly_chart(fig_cat, use_container_width=True)
+            st.markdown("#### % Ritiro per Categoria")
+            _cat = [
+                ("Poste", _c3["pct_p"], "#a855f7"),
+                ("SDA",   _c3["pct_s"], "#3b82f6"),
+                ("Fissi", _c3["pct_f"], "#22c55e"),
+                ("UPS",   _c3["pct_u"], "#f59e0b"),
+            ]
+            fig_cat = go.Figure([go.Bar(
+                x=[d[0] for d in _cat],
+                y=[round(d[1] * 100, 1) for d in _cat],
+                marker_color=[d[2] for d in _cat],
+                text=[f"{d[1]:.1%}" for d in _cat],
+                textposition="outside",
+            )])
+            fig_cat.update_layout(
+                **LAYOUT_DARK, height=280,
+                yaxis=dict(gridcolor="#2a3045", ticksuffix="%", range=[0, 115]),
+                xaxis=dict(gridcolor="#2a3045"),
+            )
+            st.plotly_chart(fig_cat, use_container_width=True)
