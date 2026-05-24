@@ -1308,7 +1308,7 @@ with tab6:
                 st.dataframe(df_det, use_container_width=True, hide_index=True)
                 _csv_d = df_det.to_csv(index=False, sep=";").encode("utf-8-sig")
                 st.download_button("⬇ Scarica CSV Dettaglio", data=_csv_d,
-                                   file_name=f"dettaglio_ritiri_{data_det}.csv",
+                                   file_name=f"dettaglio_ritiri_{data_det_iso}.csv",
                                    mime="text/csv")
 
     # ── Pivot Tipologie ───────────────────────────────────────
