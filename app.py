@@ -446,7 +446,6 @@ def _pubblica_ritiri(righe: list[dict], calc: dict,
     return len(rows_det), _aggiorna_dettaglio
 
 
-@st.cache_data(ttl=120)
 def _carica_storico_ritiri(filiale: str) -> list[dict]:
     sb = get_supabase()
     rows = (sb.table("ritiri_storico")
@@ -460,7 +459,6 @@ def _carica_storico_ritiri(filiale: str) -> list[dict]:
     return rows or []
 
 
-@st.cache_data(ttl=120)
 def _carica_dettaglio_ritiri(filiale: str) -> list[dict]:
     sb = get_supabase()
     rows = (sb.table("ritiri_dettaglio")
@@ -596,8 +594,11 @@ with st.sidebar:
                                 _filiale_ritiri_sb,
                                 _data_rif,
                             )
-                            _carica_storico_ritiri.clear()
-                            _carica_dettaglio_ritiri.clear()
+                            _carica_storico_ritiri.clear() if hasattr(_carica_storico_ritiri, 'clear') else None
+                            _carica_dettaglio_ritiri.clear() if hasattr(_carica_dettaglio_ritiri, 'clear') else None
+                            # Invalida cache session_state
+                            st.session_state.pop("_sto_cache", None)
+                            st.session_state.pop("_det_cache", None)
                             st.session_state["ritiri_calc"]     = _calc_sb
                             st.session_state["ritiri_righe"]    = _righe_sb
                             _data_fmt = datetime.strptime(_data_rif, "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -1007,9 +1008,11 @@ with tab6:
         st.stop()
 
     # ══════════════════════════════════════════════════════════
-    # Carica storico subito (serve per KPI fallback e per il tab)
+    # Carica storico (session_state cache, invalidata al publish)
     # ══════════════════════════════════════════════════════════
-    _storico_rows_preload = _carica_storico_ritiri(filiale_ritiri)
+    if "_sto_cache" not in st.session_state:
+        st.session_state["_sto_cache"] = _carica_storico_ritiri(filiale_ritiri)
+    _storico_rows_preload = st.session_state["_sto_cache"]
 
     # ── Header ────────────────────────────────────────────────
     _th1, _th2 = st.columns([3, 1])
@@ -1160,10 +1163,10 @@ with tab6:
         _rc1, _rc2 = st.columns([6, 1])
         with _rc2:
             if st.button("🔄 Aggiorna", key="btn_refresh_sto"):
-                _carica_storico_ritiri.clear()
+                st.session_state.pop("_sto_cache", None)
                 st.rerun()
 
-        storico_rows = _storico_rows_preload
+        storico_rows = st.session_state.get("_sto_cache", _storico_rows_preload)
 
         if not storico_rows:
             st.info("Nessun dato nello storico. Pubblica il primo file dalla barra laterale.")
@@ -1250,15 +1253,27 @@ with tab6:
         _rd1, _rd2 = st.columns([6, 1])
         with _rd2:
             if st.button("🔄 Aggiorna", key="btn_refresh_det"):
-                _carica_dettaglio_ritiri.clear()
+                st.session_state.pop("_det_cache", None)
+                st.rerun()
 
-        det_rows = _carica_dettaglio_ritiri(filiale_ritiri)
+        if "_det_cache" not in st.session_state:
+            st.session_state["_det_cache"] = _carica_dettaglio_ritiri(filiale_ritiri)
+        det_rows = st.session_state["_det_cache"]
 
         if not det_rows:
             st.info("Nessun dettaglio. Pubblica un file dalla barra laterale.")
         else:
-            data_det = det_rows[0].get("data_riferimento", "")[:10]
-            st.markdown(f"**Riferimento:** `{data_det}` &nbsp;—&nbsp; **{len(det_rows)} righe**")
+            # Prende la data più recente presente nel dettaglio (non oggi)
+            _date_presenti = sorted(
+                {r.get("data_riferimento","")[:10] for r in det_rows if r.get("data_riferimento")},
+                reverse=True
+            )
+            data_det_iso = _date_presenti[0] if _date_presenti else ""
+            try:
+                data_det_fmt = datetime.strptime(data_det_iso, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                data_det_fmt = data_det_iso
+            st.markdown(f"**Riferimento:** `{data_det_fmt}` &nbsp;—&nbsp; **{len(det_rows)} righe**")
 
             fc1, fc2, fc3 = st.columns(3)
             with fc1:
