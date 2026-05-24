@@ -1018,7 +1018,7 @@ with tab6:
                         pp, ps, pf, pu, label_suffix=""):
         k1, k2, k3, k4, k5, k6 = st.columns(6)
         with k1: kpi_card(f"Totale Ritiri{label_suffix}",   str(tot), "#3b82f6")
-        with k2: kpi_card(f"Ritirati{label_suffix}",         str(rit), "#22c55e")
+        with k2: kpi_card(f"Effettuati{label_suffix}",         str(rit), "#22c55e")
         with k3: kpi_card(f"LDV Ritirate{label_suffix}",    str(ldv), "#22c55e")
         with k4: kpi_card(f"Annullati{label_suffix}",        str(ann), "#ef4444")
         with k5: kpi_card(f"Assenti{label_suffix}",          str(ass), "#f59e0b")
