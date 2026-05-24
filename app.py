@@ -279,78 +279,57 @@ def _calcola_ritiri(righe: list[dict]) -> dict:
     }
 
 
-def _estrai_data_riferimento(righe: list[dict]) -> str:
+def _estrai_data_riferimento(righe: list[dict], nome_file: str = "") -> str:
     """
-    Estrae la data di riferimento dal contenuto del file.
-    Usa la colonna 'Data' delle righe: prende la data più frequente
-    (il giorno del ritiro) e la restituisce come stringa YYYY-MM-DD.
-    Fallback: data odierna.
+    Estrae la data di riferimento:
+    1. Prima prova dal nome del file (es. '22-05-2026.xls' o '22052026.xls')
+    2. Fallback: data più recente nella colonna 'Data' del file
+    3. Fallback finale: data odierna
     """
-    import re
     from collections import Counter
+    import re
 
+    # ── 1. Dal nome del file ──────────────────────────────────
+    if nome_file:
+        # cerca pattern DD-MM-YYYY o DD/MM/YYYY o DDMMYYYY nel nome
+        patterns = [
+            (r"(\d{2})[-/\.](\d{2})[-/\.](\d{4})", "%d%m%Y"),
+            (r"(\d{4})[-/\.](\d{2})[-/\.](\d{2})", None),  # YYYY-MM-DD
+            (r"(\d{2})(\d{2})(\d{4})", "%d%m%Y"),
+        ]
+        for pat, _ in patterns:
+            m = re.search(pat, nome_file)
+            if m:
+                try:
+                    g = m.groups()
+                    if len(g[0]) == 4:  # YYYY-MM-DD
+                        d = date(int(g[0]), int(g[1]), int(g[2]))
+                    else:               # DD-MM-YYYY o DDMMYYYY
+                        d = date(int(g[2]), int(g[1]), int(g[0]))
+                    return d.isoformat()
+                except (ValueError, IndexError):
+                    continue
+
+    # ── 2. Dalla colonna Data delle righe (data più recente) ─
     candidate_dates = []
     for r in righe:
         raw = r.get("Data", "").strip()
         if not raw:
             continue
-        # Prova vari formati: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, DD/MM/YY
         for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%y", "%d-%m-%y"):
             try:
                 d = datetime.strptime(raw[:10], fmt).date()
-                candidate_dates.append(d)
+                # Esclude date future (oltre oggi) — sono date di consegna prevista
+                if d <= date.today():
+                    candidate_dates.append(d)
                 break
             except ValueError:
                 continue
 
-    if not candidate_dates:
-        return date.today().isoformat()
+    if candidate_dates:
+        return max(candidate_dates).isoformat()
 
-    # Data più frequente nel file (giorno di riferimento del file)
-    most_common = Counter(candidate_dates).most_common(1)[0][0]
-    return most_common.isoformat()
-    """Calcola KPI aggregati dai ritiri — stessa logica del .pyw."""
-    from collections import defaultdict
-    valide = [r for r in righe
-              if r.get("Stato Ritiro", "").strip().upper() != "ANNULLATO"]
-
-    pivot = defaultdict(lambda: defaultdict(int))
-    for r in valide:
-        tip   = r.get("Tipologia", "").strip()
-        stato = r.get("Stato Ritiro", "").strip()
-        if stato in _STATI_ESITO:
-            pivot[tip][stato] += 1
-
-    def _sezione(tips, col_lav):
-        ris = {}
-        for tip in tips:
-            tot = sum(pivot[tip].values())
-            lav = pivot[tip].get(col_lav, 0)
-            ris[tip] = {"tot": tot, "lav": lav}
-        tot_tot = sum(v["tot"] for v in ris.values())
-        tot_lav = sum(v["lav"] for v in ris.values())
-        pct     = tot_lav / tot_tot if tot_tot else 0
-        return ris, tot_tot, tot_lav, pct
-
-    poste, tot_p, lav_p, pct_p = _sezione(_TIPOLOGIE_POSTE, "SPEDIZIONE RITIRATA")
-    sda,   tot_s, rit_s, pct_s = _sezione(_TIPOLOGIE_SDA,   "SPEDIZIONE RITIRATA")
-    fissi, tot_f, lav_f, pct_f = _sezione(_TIPOLOGIE_FISSI, "SPEDIZIONE RITIRATA")
-    ups,   tot_u, rit_u, pct_u = _sezione(_TIPOLOGIE_UPS,   "SPEDIZIONE RITIRATA")
-
-    n_ldv = sum(int(r.get("LV Ritirate", "0") or 0)
-                for r in valide
-                if r.get("Stato Ritiro", "").strip() == "SPEDIZIONE RITIRATA")
-
-    return {
-        "pivot":    dict(pivot),
-        "valide":   valide,
-        "totale":   len(righe),
-        "n_ldv":    n_ldv,
-        "tot_p": tot_p, "lav_p": lav_p, "pct_p": pct_p, "poste": poste,
-        "tot_s": tot_s, "rit_s": rit_s, "pct_s": pct_s, "sda":   sda,
-        "tot_f": tot_f, "lav_f": lav_f, "pct_f": pct_f, "fissi": fissi,
-        "tot_u": tot_u, "rit_u": rit_u, "pct_u": pct_u, "ups":   ups,
-    }
+    return date.today().isoformat()
 
 
 def _pubblica_ritiri(righe: list[dict], calc: dict,
@@ -587,18 +566,18 @@ with st.sidebar:
                             st.error("Nessun dato nel file.")
                         else:
                             _calc_sb  = _calcola_ritiri(_righe_sb)
-                            _data_rif = _estrai_data_riferimento(_righe_sb)
+                            _data_rif = _estrai_data_riferimento(_righe_sb, up_ritiri_sb.name)
                             _n_pub, _det_aggiornato = _pubblica_ritiri(
                                 _righe_sb, _calc_sb,
                                 up_ritiri_sb.name,
                                 _filiale_ritiri_sb,
                                 _data_rif,
                             )
-                            _carica_storico_ritiri.clear() if hasattr(_carica_storico_ritiri, 'clear') else None
-                            _carica_dettaglio_ritiri.clear() if hasattr(_carica_dettaglio_ritiri, 'clear') else None
-                            # Invalida cache session_state
+                            # Invalida cache e ricarica subito (non aspetta il rerun)
                             st.session_state.pop("_sto_cache", None)
                             st.session_state.pop("_det_cache", None)
+                            st.session_state["_sto_cache"] = _carica_storico_ritiri(_filiale_ritiri_sb)
+                            st.session_state["_det_cache"] = _carica_dettaglio_ritiri(_filiale_ritiri_sb)
                             st.session_state["ritiri_calc"]     = _calc_sb
                             st.session_state["ritiri_righe"]    = _righe_sb
                             _data_fmt = datetime.strptime(_data_rif, "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -1098,10 +1077,36 @@ with tab6:
         )
 
     elif _rtab_active == "dettaglio" and _df_fer is not None and not _df_fer.empty:
-        # Ultimo giorno feriale disponibile
-        _ult = _df_fer.sort_values("data_riferimento", ascending=False).iloc[0]
-        _data_ult = pd.to_datetime(_ult["data_riferimento"]).strftime("%d/%m/%Y")
-        st.caption(f"📋 Valori del **{_data_ult}** (ultimo giorno feriale disponibile)")
+        # Legge la data reale dal dettaglio in Supabase
+        if "_det_cache" not in st.session_state:
+            st.session_state["_det_cache"] = _carica_dettaglio_ritiri(filiale_ritiri)
+        _det_preview = st.session_state["_det_cache"]
+        if _det_preview:
+            _date_det = sorted(
+                {r.get("data_riferimento","")[:10] for r in _det_preview
+                 if r.get("data_riferimento")},
+                reverse=True
+            )
+            _data_det_iso = _date_det[0] if _date_det else ""
+        else:
+            _data_det_iso = ""
+
+        # Cerca il record corrispondente nello storico
+        _ult = None
+        if _data_det_iso:
+            _match = _df_fer[_df_fer["data_riferimento"].astype(str).str[:10] == _data_det_iso]
+            if not _match.empty:
+                _ult = _match.iloc[0]
+        if _ult is None:
+            # fallback: ultimo feriale nello storico
+            _ult = _df_fer.sort_values("data_riferimento", ascending=False).iloc[0]
+            _data_det_iso = str(_ult["data_riferimento"])[:10]
+
+        try:
+            _data_ult = datetime.strptime(_data_det_iso, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            _data_ult = _data_det_iso
+        st.caption(f"📋 Valori del **{_data_ult}** (giorno del dettaglio)")
         _render_kpi_row(
             int(_ult.get("totale",    0) or 0),
             int(_ult.get("ritirati",  0) or 0),
