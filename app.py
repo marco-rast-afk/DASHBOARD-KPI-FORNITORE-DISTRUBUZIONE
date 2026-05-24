@@ -729,7 +729,7 @@ with tab2:
         # GRAFICO — Produttività media per giro (barre orizzontali)
         st.markdown("#### Produttività Media per Giro (LDV OK+RIT)")
         if per_giro:
-            giri_sorted = sorted(per_giro.items())
+            giri_sorted = sorted(per_giro.items(), key=lambda kv: int(str(kv[0])) if str(kv[0]).isdigit() else float('inf'))
             fig_giri = go.Figure(go.Bar(
                 y=[f"Giro {g}" for g, _ in giri_sorted],
                 x=[round(v["ldv_tot"], 1) for _, v in giri_sorted],
@@ -754,7 +754,7 @@ with tab2:
                 "Stop Ok (Media)":                   f"{v['stop_ok']:.1f}",
                 "Stop Rit (Media)":                  f"{v['stop_rit']:.1f}",
                 "Prod Media Giorno (LV OK + RIT)":   f"{v['ldv_tot']:.1f}",
-            } for g, v in sorted(per_giro.items())]
+            } for g, v in sorted(per_giro.items(), key=lambda kv: int(str(kv[0])) if str(kv[0]).isdigit() else float('inf'))]
             st.dataframe(pd.DataFrame(rows_giro), use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════
@@ -866,7 +866,7 @@ with tab4:
 
         righe_giorno = []
 
-        for g, v in sorted(giri_day.items()):
+        for g, v in sorted(giri_day.items(), key=lambda kv: int(str(kv[0])) if str(kv[0]).isdigit() else float('inf')):
             righe_giorno.append({
                 "Giro":                          g,
                 "LV AFF":                        int(v.get("lv_af",  0)),
@@ -1312,7 +1312,7 @@ with tab6:
                 _f_tipo = st.selectbox("Tipologia", ["Tutte"] + _tipi_u, key="filt_tipo_det")
             with fc3:
                 _giri_u = sorted({r.get("giro","") for r in det_rows if r.get("giro")},
-                                  key=lambda x: int(x) if x.isdigit() else 999)
+                                  key=lambda x: int(str(x)) if str(x).isdigit() else float('inf'))
                 _f_giro = st.selectbox("Giro", ["Tutti"] + _giri_u, key="filt_giro_det")
 
             _det_f = [
