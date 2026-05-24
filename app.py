@@ -766,7 +766,7 @@ with tab3:
     for fil in filiali:
         _, _, pg = aggrega_filiale(dati[fil], date_da, date_a)
         if pg:
-            for giro, v in sorted(pg.items()):
+            for giro, v in sorted(pg.items(), key=lambda kv: int(str(kv[0])) if str(kv[0]).isdigit() else float('inf')):
                 righe_tutti.append({
                     "Filiale":                           fil,
                     "Giro":                              giro,
@@ -781,6 +781,11 @@ with tab3:
 
     if righe_tutti:
         df_tutti = pd.DataFrame(righe_tutti)
+        # Ordina numericamente per Giro poi per Filiale
+        df_tutti["_giro_num"] = df_tutti["Giro"].apply(
+            lambda x: int(str(x)) if str(x).isdigit() else float('inf')
+        )
+        df_tutti = df_tutti.sort_values(["Filiale", "_giro_num"]).drop(columns=["_giro_num"])
         fil_filter = st.multiselect("Filtra per filiale", filiali, default=filiali, key="filter_tutti")
         df_tutti_f = df_tutti[df_tutti["Filiale"].isin(fil_filter)]
 
