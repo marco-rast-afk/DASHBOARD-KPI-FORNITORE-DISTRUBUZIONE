@@ -433,6 +433,7 @@ if "date_da" not in st.session_state: st.session_state.date_da = None
 if "date_a"  not in st.session_state: st.session_state.date_a  = None
 
 # ── SIDEBAR ───────────────────────────────────────────────────
+progetto_attivo = st.secrets.get("PROGETTO", "—")
 with st.sidebar:
     st.markdown(
         f"<div style='font-size:0.8rem;color:#64748b;margin-bottom:12px'>"
