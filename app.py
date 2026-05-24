@@ -234,6 +234,51 @@ def _leggi_ritiri(uploaded_file) -> list[dict]:
     return result
 
 
+def _calcola_ritiri(righe: list[dict]) -> dict:
+    """Calcola KPI aggregati dai ritiri."""
+    from collections import defaultdict
+    valide = [r for r in righe
+              if r.get("Stato Ritiro", "").strip().upper() != "ANNULLATO"]
+
+    pivot = defaultdict(lambda: defaultdict(int))
+    for r in valide:
+        tip   = r.get("Tipologia", "").strip()
+        stato = r.get("Stato Ritiro", "").strip()
+        if stato in _STATI_ESITO:
+            pivot[tip][stato] += 1
+
+    def _sezione(tips, col_lav):
+        ris = {}
+        for tip in tips:
+            tot = sum(pivot[tip].values())
+            lav = pivot[tip].get(col_lav, 0)
+            ris[tip] = {"tot": tot, "lav": lav}
+        tot_tot = sum(v["tot"] for v in ris.values())
+        tot_lav = sum(v["lav"] for v in ris.values())
+        pct     = tot_lav / tot_tot if tot_tot else 0
+        return ris, tot_tot, tot_lav, pct
+
+    poste, tot_p, lav_p, pct_p = _sezione(_TIPOLOGIE_POSTE, "SPEDIZIONE RITIRATA")
+    sda,   tot_s, rit_s, pct_s = _sezione(_TIPOLOGIE_SDA,   "SPEDIZIONE RITIRATA")
+    fissi, tot_f, lav_f, pct_f = _sezione(_TIPOLOGIE_FISSI, "SPEDIZIONE RITIRATA")
+    ups,   tot_u, rit_u, pct_u = _sezione(_TIPOLOGIE_UPS,   "SPEDIZIONE RITIRATA")
+
+    n_ldv = sum(int(r.get("LV Ritirate", "0") or 0)
+                for r in valide
+                if r.get("Stato Ritiro", "").strip() == "SPEDIZIONE RITIRATA")
+
+    return {
+        "pivot":  dict(pivot),
+        "valide": valide,
+        "totale": len(righe),
+        "n_ldv":  n_ldv,
+        "tot_p": tot_p, "lav_p": lav_p, "pct_p": pct_p, "poste": poste,
+        "tot_s": tot_s, "rit_s": rit_s, "pct_s": pct_s, "sda":   sda,
+        "tot_f": tot_f, "lav_f": lav_f, "pct_f": pct_f, "fissi": fissi,
+        "tot_u": tot_u, "rit_u": rit_u, "pct_u": pct_u, "ups":   ups,
+    }
+
+
 def _estrai_data_riferimento(righe: list[dict]) -> str:
     """
     Estrae la data di riferimento dal contenuto del file.
