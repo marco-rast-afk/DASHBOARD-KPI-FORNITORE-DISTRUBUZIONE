@@ -434,51 +434,50 @@ if "date_a"  not in st.session_state: st.session_state.date_a  = None
 
 # ── SIDEBAR ───────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 📦 Dashboard Performance")
-    progetto_attivo = st.secrets.get("PROGETTO", "—")
-    st.markdown(f"🗂 **Progetto:** `{progetto_attivo}`")
+    st.markdown(
+        f"<div style='font-size:0.8rem;color:#64748b;margin-bottom:12px'>"
+        f"🗂 {progetto_attivo}</div>",
+        unsafe_allow_html=True,
+    )
 
     # ══════════════════════════════════════════
-    # BLOCCO 1 — CORRIERI / PERFORMANCE SDA
+    # BLOCCO 1 — PERFORMANCE CORRIERI
     # ══════════════════════════════════════════
     st.markdown("""
     <div style="background:#1e2330;border:1px solid #3b82f6;border-radius:8px;
-                padding:8px 12px 4px;margin:10px 0 6px;">
-        <span style="color:#3b82f6;font-weight:700;font-size:0.95rem;">
+                padding:8px 12px;margin:0 0 8px;">
+        <span style="color:#3b82f6;font-weight:700;font-size:0.9rem;letter-spacing:.03em;">
             🚚 PERFORMANCE CORRIERI
         </span>
     </div>
     """, unsafe_allow_html=True)
 
-    st.caption("Carica un file Excel: i dati vengono accodati a quelli esistenti su Supabase.")
-    uploaded = st.file_uploader("Seleziona file Excel corrieri", type=["xlsx", "xls"],
-                                key="up_corrieri")
+    uploaded = st.file_uploader(" ", type=["xlsx", "xls"],
+                                key="up_corrieri",
+                                label_visibility="collapsed")
     if uploaded:
-        if st.button("⬆ Importa su Supabase", use_container_width=True, type="primary",
+        if st.button("⬆ Importa", use_container_width=True, type="primary",
                      key="btn_importa_corrieri"):
-            with st.spinner("Lettura e importazione in corso..."):
+            with st.spinner("Importazione..."):
                 try:
                     dati_nuovi = leggi_file_corrieri(uploaded)
                     n_righe = importa_su_supabase(dati_nuovi)
-                    st.success(f"✅ {n_righe} record importati!")
+                    st.success(f"✅ {n_righe} record")
                     st.session_state.dati = None
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Errore importazione: {e}")
+                    st.error(str(e))
 
     if st.session_state.dati is None:
-        with st.spinner("Caricamento dati da Supabase..."):
+        with st.spinner("Caricamento..."):
             try:
                 st.session_state.dati = carica_da_supabase()
-                if st.session_state.dati:
-                    st.success(f"✅ {len(st.session_state.dati)} filiali caricate")
-                else:
-                    st.warning("Nessun dato presente. Importa un file Excel.")
+                if not st.session_state.dati:
+                    st.warning("Nessun dato. Importa un file.")
             except Exception as e:
-                st.error(f"Errore connessione Supabase: {e}")
+                st.error(f"Supabase: {e}")
 
-    if st.button("🔄 Ricarica da Supabase", use_container_width=True,
-                 key="btn_ricarica_corrieri"):
+    if st.button("🔄 Ricarica", use_container_width=True, key="btn_ricarica_corrieri"):
         st.session_state.dati = None
         st.rerun()
 
@@ -486,7 +485,10 @@ with st.sidebar:
     if st.session_state.dati:
         tutte_date = sorted({d for fil in st.session_state.dati.values() for d in fil})
         if tutte_date:
-            st.markdown("### 📅 Periodo")
+            st.markdown(
+                "<div style='font-size:0.78rem;color:#64748b;margin:10px 0 4px'>📅 Periodo</div>",
+                unsafe_allow_html=True,
+            )
             col1, col2 = st.columns(2)
             with col1:
                 date_da = st.date_input("Dal", value=tutte_date[0],
@@ -498,16 +500,16 @@ with st.sidebar:
             st.session_state.date_a  = date_a
             c1, c2, c3 = st.columns(3)
             with c1:
-                if st.button("Oggi"):
+                if st.button("Oggi", use_container_width=True):
                     st.session_state.date_da = st.session_state.date_a = tutte_date[-1]
                     st.rerun()
             with c2:
-                if st.button("7gg"):
+                if st.button("7gg", use_container_width=True):
                     st.session_state.date_a  = tutte_date[-1]
                     st.session_state.date_da = max(tutte_date[0], tutte_date[-1] - timedelta(days=6))
                     st.rerun()
             with c3:
-                if st.button("Tutto"):
+                if st.button("Tutto", use_container_width=True):
                     st.session_state.date_da = tutte_date[0]
                     st.session_state.date_a  = tutte_date[-1]
                     st.rerun()
@@ -517,8 +519,8 @@ with st.sidebar:
     # ══════════════════════════════════════════
     st.markdown("""
     <div style="background:#1e2330;border:1px solid #a855f7;border-radius:8px;
-                padding:8px 12px 4px;margin:18px 0 6px;">
-        <span style="color:#a855f7;font-weight:700;font-size:0.95rem;">
+                padding:8px 12px;margin:16px 0 8px;">
+        <span style="color:#a855f7;font-weight:700;font-size:0.9rem;letter-spacing:.03em;">
             📦 RITIRI
         </span>
     </div>
@@ -526,23 +528,19 @@ with st.sidebar:
 
     _filiale_ritiri_sb = st.secrets.get("FILIALE_RITIRI", "")
     if not _filiale_ritiri_sb:
-        st.caption("⚠️ Aggiungi `FILIALE_RITIRI` nei secrets per abilitare.")
+        st.caption("⚠️ Secrets: aggiungi `FILIALE_RITIRI`")
     else:
-        st.caption(f"Filiale: **{_filiale_ritiri_sb}** — carica il file giornaliero e pubblica sulla dashboard.")
-        up_ritiri_sb = st.file_uploader(
-            "Seleziona file ritiri (xlsx / xls / csv)",
-            type=["xlsx", "xls", "csv"],
-            key="up_ritiri_sb",
-        )
+        up_ritiri_sb = st.file_uploader(" ", type=["xlsx", "xls", "csv"],
+                                        key="up_ritiri_sb",
+                                        label_visibility="collapsed")
         if up_ritiri_sb:
-            if st.button("⬆️ Calcola & Pubblica Ritiri",
-                         type="primary", use_container_width=True,
-                         key="btn_pubblica_ritiri_sb"):
-                with st.spinner("Elaborazione in corso..."):
+            if st.button("⬆ Calcola & Pubblica", type="primary",
+                         use_container_width=True, key="btn_pubblica_ritiri_sb"):
+                with st.spinner("Elaborazione..."):
                     try:
                         _righe_sb  = _leggi_ritiri(up_ritiri_sb)
                         if not _righe_sb:
-                            st.error("Nessun dato trovato nel file.")
+                            st.error("Nessun dato nel file.")
                         else:
                             _calc_sb  = _calcola_ritiri(_righe_sb)
                             _data_rif = _estrai_data_riferimento(_righe_sb)
@@ -559,12 +557,12 @@ with st.sidebar:
                             _data_fmt = datetime.strptime(_data_rif, "%Y-%m-%d").strftime("%d/%m/%Y")
                             st.session_state["ritiri_data_rif"] = _data_fmt
                             if _det_aggiornato:
-                                st.success(f"✅ {_n_pub} righe + KPI pubblicati ({_data_fmt})")
+                                st.success(f"✅ {_n_pub} righe ({_data_fmt})")
                             else:
-                                st.success(f"✅ KPI salvati ({_data_fmt}) — dettaglio non sovrascritto (data più recente già presente)")
+                                st.success(f"✅ KPI salvati ({_data_fmt})\nDettaglio non sovrascritto.")
                             st.rerun()
                     except Exception as _ex:
-                        st.error(f"Errore: {_ex}")
+                        st.error(str(_ex))
 
 if not st.session_state.dati:
     st.info("👈 Importa un file Excel dalla barra laterale, oppure attendi il caricamento da Supabase.")
@@ -1039,15 +1037,15 @@ with tab6:
         _df_fer = _df_fer[_df_fer["_dow"] < 5].drop(columns=["_dow"])
 
     if _rtab_active == "storico" and _df_fer is not None and not _df_fer.empty:
-        # Medie su tutti i giorni feriali
+        # Prima riga: SOMME totali — Seconda riga: MEDIE %
         _n = len(_df_fer)
-        _avg = lambda col: int(round(_df_fer[col].fillna(0).astype(float).sum() / _n))
-        _avgf= lambda col: _df_fer[col].fillna(0).astype(float).mean()
-        st.caption(f"📊 Valori medi su **{_n} giorni** feriali")
+        _sum = lambda col: int(_df_fer[col].fillna(0).astype(float).sum())
+        _avg = lambda col: _df_fer[col].fillna(0).astype(float).mean()
+        st.caption(f"📊 Totali cumulati su **{_n} giorni** feriali — % medie")
         _render_kpi_row(
-            _avg("totale"), _avg("ritirati"), _avg("ldv"),
-            _avg("annullati"), _avg("assenti"), _avg("non_pronti"),
-            _avgf("pct_p"), _avgf("pct_s"), _avgf("pct_f"), _avgf("pct_u"),
+            _sum("totale"), _sum("ritirati"), _sum("ldv"),
+            _sum("annullati"), _sum("assenti"), _sum("non_pronti"),
+            _avg("pct_p"), _avg("pct_s"), _avg("pct_f"), _avg("pct_u"),
         )
 
     elif _rtab_active == "dettaglio" and _df_fer is not None and not _df_fer.empty:
