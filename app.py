@@ -1268,12 +1268,35 @@ with tab6:
         if not det_rows:
             st.info("Nessun dettaglio. Pubblica un file dalla barra laterale.")
         else:
-            # Prende la data più recente presente nel dettaglio (non oggi)
-            _date_presenti = sorted(
+            # Prende la data più recente presente nel dettaglio
+            # Se data_riferimento == oggi, usa data_ritiro dalle righe (dato operativo reale)
+            _date_rif = sorted(
                 {r.get("data_riferimento","")[:10] for r in det_rows if r.get("data_riferimento")},
                 reverse=True
             )
-            data_det_iso = _date_presenti[0] if _date_presenti else ""
+            data_det_iso = _date_rif[0] if _date_rif else ""
+
+            # Se la data salvata è oggi o futura, prova a ricavarla da data_ritiro delle righe
+            try:
+                _d_rif = date.fromisoformat(data_det_iso)
+                if _d_rif >= date.today():
+                    # Estrai da colonna data_ritiro (es. "22/05/2026")
+                    _date_op = []
+                    for _r in det_rows:
+                        _raw = (_r.get("data_ritiro","") or "").strip()
+                        for _fmt in ("%d/%m/%Y","%d-%m-%Y","%Y-%m-%d"):
+                            try:
+                                _dp = datetime.strptime(_raw[:10], _fmt).date()
+                                if _dp < date.today():
+                                    _date_op.append(_dp)
+                                break
+                            except Exception:
+                                continue
+                    if _date_op:
+                        data_det_iso = max(_date_op).isoformat()
+            except Exception:
+                pass
+
             try:
                 data_det_fmt = datetime.strptime(data_det_iso, "%Y-%m-%d").strftime("%d/%m/%Y")
             except Exception:
