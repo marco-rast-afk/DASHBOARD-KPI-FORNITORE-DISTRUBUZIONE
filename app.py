@@ -1787,7 +1787,6 @@ with tab7:
                     tickformat="%d %b",
                 ),
                 yaxis=dict(gridcolor="#2a3045"),
-                legend=dict(orientation="h", y=-0.25, bgcolor="rgba(0,0,0,0)"),
                 margin=dict(l=0, r=0, t=20, b=0),
             )
             st.plotly_chart(fig_arr, use_container_width=True)
@@ -1843,7 +1842,6 @@ with tab7:
                     tickformat="%d %b",
                 ),
                 yaxis=dict(gridcolor="#2a3045"),
-                legend=dict(orientation="h", y=-0.25, bgcolor="rgba(0,0,0,0)"),
                 margin=dict(l=0, r=0, t=20, b=0),
             )
             st.plotly_chart(fig_par, use_container_width=True)
