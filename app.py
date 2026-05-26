@@ -599,13 +599,14 @@ filiali = sorted(dati.keys())
 date_da = st.session_state.date_da
 date_a  = st.session_state.date_a
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📊 Panoramica",
     "🏢 Dettaglio Filiale",
     "📋 Tutti i Giri",
     "📅 Giornaliero",
     "💶 Tariffa",
     "📦 Ritiri",
+    "🚛 Arrivi & Partenze",
 ])
 
 # ══════════════════════════════════════════════════════════════
@@ -1395,3 +1396,466 @@ with tab6:
                 xaxis=dict(gridcolor="#2a3045"),
             )
             st.plotly_chart(fig_cat, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# FUNZIONI HELPER — ARRIVI & PARTENZE
+# ══════════════════════════════════════════════════════════════
+
+def _estrai_data_da_nome_ap(nome_file: str) -> str | None:
+    """Estrae data dal nome del file (es. 04-05-2026 o 12-05-26)."""
+    import re
+    patterns = [
+        r"(\d{2})[-_](\d{2})[-_](\d{4})",   # DD-MM-YYYY
+        r"(\d{2})[-_](\d{2})[-_](\d{2})\b",  # DD-MM-YY
+        r"(\d{4})[-_](\d{2})[-_](\d{2})",    # YYYY-MM-DD
+    ]
+    for pat in patterns:
+        m = re.search(pat, nome_file)
+        if m:
+            g = m.groups()
+            try:
+                if len(g[0]) == 4:
+                    return date(int(g[0]), int(g[1]), int(g[2])).isoformat()
+                elif len(g[2]) == 2:
+                    anno = 2000 + int(g[2])
+                    return date(anno, int(g[1]), int(g[0])).isoformat()
+                else:
+                    return date(int(g[2]), int(g[1]), int(g[0])).isoformat()
+            except (ValueError, IndexError):
+                continue
+    return None
+
+
+def _leggi_arrivi_excel(uploaded_file) -> dict:
+    """
+    Legge il file Monitoraggio Arrivi.
+    Cerca il foglio 'foglio sintetico UPE ' (o simile) oppure il foglio attivo.
+    Estrae da row 2 colB la data, e dalla riga dove colA == filiale_target:
+      - colB = arrivi_validi (B12)
+      - colC = affidate (C12)
+    Restituisce {'data': str, 'arrivi_validi': int, 'affidate': int} o raise ValueError.
+    """
+    import openpyxl, re
+    filiale_target = st.secrets.get("FILIALE_RITIRI", "").upper().strip()
+
+    wb = openpyxl.load_workbook(uploaded_file, read_only=True, data_only=True)
+    # Cerca foglio con "sintetico" nel nome
+    ws = None
+    for sname in wb.sheetnames:
+        if "sintetico" in sname.lower() or "foglio1" == sname.lower():
+            ws = wb[sname]
+            break
+    if ws is None:
+        ws = wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+
+    # Data: riga 2, colonna B (indice 1)
+    data_raw = None
+    if len(rows) >= 2:
+        for ci in range(min(5, len(rows[1]))):
+            v = rows[1][ci]
+            if isinstance(v, (datetime,)):
+                data_raw = v.date().isoformat()
+                break
+            elif isinstance(v, date):
+                data_raw = v.isoformat()
+                break
+
+    # Cerca la riga della filiale target (col A) - righe 3+
+    arrivi_validi = None
+    affidate = None
+    for row in rows[2:]:
+        if not row or row[0] is None:
+            continue
+        cell_a = str(row[0] or "").strip().upper()
+        if filiale_target and filiale_target in cell_a:
+            arrivi_validi = int(row[1]) if len(row) > 1 and row[1] is not None else 0
+            affidate = int(row[2]) if len(row) > 2 and row[2] is not None else 0
+            break
+        # Fallback: cerca la riga con dati validi (la riga totale, indice 0 = None)
+    
+    # Se filiale non trovata, prova riga totale (col A = None, valori in B e C)
+    if arrivi_validi is None:
+        for row in rows[2:]:
+            if not row:
+                continue
+            if row[0] is None and len(row) > 2:
+                b = row[1]
+                c = row[2]
+                if b is not None and isinstance(b, (int, float)) and b > 0:
+                    arrivi_validi = int(b)
+                    affidate = int(c) if c is not None else 0
+                    break
+
+    return {
+        "data": data_raw,
+        "arrivi_validi": arrivi_validi or 0,
+        "affidate": affidate or 0,
+    }
+
+
+def _leggi_partenze_excel(uploaded_file) -> dict:
+    """
+    Legge il file Monitoraggio Partenze.
+    Struttura: data a C3, filiale in colB, PPP LDV in colC, Colli in colD.
+    La riga target è quella dove colB == filiale_target.
+    """
+    import openpyxl
+    filiale_target = st.secrets.get("FILIALE_RITIRI", "").upper().strip()
+
+    wb = openpyxl.load_workbook(uploaded_file, read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+
+    # Data: riga 3, colonna C (indice 2)
+    data_raw = None
+    if len(rows) >= 3:
+        v = rows[2][2] if len(rows[2]) > 2 else None
+        if isinstance(v, datetime):
+            data_raw = v.date().isoformat()
+        elif isinstance(v, date):
+            data_raw = v.isoformat()
+
+    # Cerca filiale (col B = indice 1)
+    ppp_ldv = None
+    colli = None
+    for row in rows[4:]:
+        if not row or row[1] is None:
+            continue
+        cell_b = str(row[1] or "").strip().upper()
+        if filiale_target and filiale_target in cell_b:
+            ppp_ldv = int(row[2]) if len(row) > 2 and row[2] is not None else 0
+            colli = int(row[3]) if len(row) > 3 and row[3] is not None else 0
+            break
+
+    # Fallback: riga totale (col B con valori in C e D, col A = None)
+    if ppp_ldv is None:
+        for row in rows[4:]:
+            if not row:
+                continue
+            if row[1] is not None and len(row) > 3:
+                c = row[2]
+                d = row[3]
+                if c is not None and isinstance(c, (int, float)) and c > 0:
+                    ppp_ldv = int(c)
+                    colli = int(d) if d is not None else 0
+                    break
+
+    return {
+        "data": data_raw,
+        "ppp_ldv": ppp_ldv or 0,
+        "colli": colli or 0,
+    }
+
+
+def _salva_ap_supabase(data_iso: str, tipo: str, val1: int, val2: int, nome_file: str = "") -> None:
+    """
+    Upsert nella tabella arrivi_partenze.
+    tipo = 'arrivi' | 'partenze'
+    arrivi:   val1=arrivi_validi, val2=affidate
+    partenze: val1=ppp_ldv, val2=colli
+    """
+    sb = get_supabase()
+    progetto = get_progetto()
+    sb.table("arrivi_partenze").upsert(
+        {
+            "progetto":  progetto,
+            "data":      data_iso,
+            "tipo":      tipo,
+            "val1":      val1,
+            "val2":      val2,
+            "nome_file": nome_file,
+        },
+        on_conflict="progetto,data,tipo"
+    ).execute()
+
+
+def _carica_storico_ap(tipo: str) -> list[dict]:
+    """Carica storico arrivi o partenze da Supabase."""
+    sb = get_supabase()
+    progetto = get_progetto()
+    rows = (
+        sb.table("arrivi_partenze")
+        .select("*")
+        .eq("progetto", progetto)
+        .eq("tipo", tipo)
+        .order("data", desc=True)
+        .limit(90)
+        .execute()
+        .data
+    )
+    return rows or []
+
+
+def _filtra_feriali_ap(rows: list[dict]) -> list[dict]:
+    """Rimuove sabato e domenica."""
+    out = []
+    for r in rows:
+        try:
+            d = date.fromisoformat(r["data"])
+            if d.weekday() < 5:
+                out.append(r)
+        except Exception:
+            pass
+    return out
+
+
+# ══════════════════════════════════════════════════════════════
+# SIDEBAR — Blocco ARRIVI & PARTENZE
+# ══════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.markdown("""
+    <div style="background:#1e2330;border:1px solid #14b8a6;border-radius:8px;
+                padding:8px 12px;margin:16px 0 8px;">
+        <span style="color:#14b8a6;font-weight:700;font-size:0.9rem;letter-spacing:.03em;">
+            🚛 ARRIVI &amp; PARTENZE
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _ap_mode = st.radio(
+        "Modalità inserimento",
+        ["📂 Importa Excel", "✏️ Manuale"],
+        key="ap_insert_mode",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    if _ap_mode == "📂 Importa Excel":
+        st.caption("**File Arrivi**")
+        _up_arr = st.file_uploader(" ", type=["xlsx", "xls"],
+                                   key="up_arrivi_file",
+                                   label_visibility="collapsed")
+        st.caption("**File Partenze**")
+        _up_par = st.file_uploader(" ", type=["xlsx", "xls"],
+                                   key="up_partenze_file",
+                                   label_visibility="collapsed")
+
+        if _up_arr or _up_par:
+            if st.button("⬆ Importa Arrivi & Partenze", type="primary",
+                         use_container_width=True, key="btn_importa_ap"):
+                with st.spinner("Importazione..."):
+                    _errs = []
+                    _ok_msgs = []
+                    if _up_arr:
+                        try:
+                            _d_arr = _leggi_arrivi_excel(_up_arr)
+                            _data_arr = _d_arr["data"] or _estrai_data_da_nome_ap(_up_arr.name) or date.today().isoformat()
+                            _salva_ap_supabase(_data_arr, "arrivi",
+                                               _d_arr["arrivi_validi"], _d_arr["affidate"],
+                                               _up_arr.name)
+                            _ok_msgs.append(f"✅ Arrivi {_data_arr}: {_d_arr['arrivi_validi']} validi / {_d_arr['affidate']} affidate")
+                            st.session_state.pop("_ap_arr_cache", None)
+                        except Exception as _e:
+                            _errs.append(f"Arrivi: {_e}")
+                    if _up_par:
+                        try:
+                            _d_par = _leggi_partenze_excel(_up_par)
+                            _data_par = _d_par["data"] or _estrai_data_da_nome_ap(_up_par.name) or date.today().isoformat()
+                            _salva_ap_supabase(_data_par, "partenze",
+                                               _d_par["ppp_ldv"], _d_par["colli"],
+                                               _up_par.name)
+                            _ok_msgs.append(f"✅ Partenze {_data_par}: {_d_par['ppp_ldv']} LdV / {_d_par['colli']} colli")
+                            st.session_state.pop("_ap_par_cache", None)
+                        except Exception as _e:
+                            _errs.append(f"Partenze: {_e}")
+                    for m in _ok_msgs:
+                        st.success(m)
+                    for e in _errs:
+                        st.error(e)
+                    if _ok_msgs:
+                        st.rerun()
+
+    else:  # Manuale
+        st.caption("**Inserimento manuale**")
+        _ap_tipo_man = st.selectbox("Tipo", ["Arrivi", "Partenze"], key="ap_tipo_man")
+        _ap_data_man = st.date_input("Data", value=date.today(), key="ap_data_man")
+
+        if _ap_tipo_man == "Arrivi":
+            _ap_v1_man = st.number_input("Arrivi Validi (B12)", min_value=0, step=1, key="ap_v1_man")
+            _ap_v2_man = st.number_input("Affidate (C12)", min_value=0, step=1, key="ap_v2_man")
+            _ap_v1_lbl, _ap_v2_lbl = "Arrivi Validi", "Affidate"
+        else:
+            _ap_v1_man = st.number_input("PPP LdV (C15)", min_value=0, step=1, key="ap_v1_man")
+            _ap_v2_man = st.number_input("Colli (D15)", min_value=0, step=1, key="ap_v2_man")
+            _ap_v1_lbl, _ap_v2_lbl = "PPP LdV", "Colli"
+
+        if st.button("💾 Salva", type="primary", use_container_width=True, key="btn_salva_ap_man"):
+            with st.spinner("Salvataggio..."):
+                try:
+                    _tipo_key = "arrivi" if _ap_tipo_man == "Arrivi" else "partenze"
+                    _salva_ap_supabase(
+                        _ap_data_man.isoformat(), _tipo_key,
+                        int(_ap_v1_man), int(_ap_v2_man), "manuale"
+                    )
+                    st.session_state.pop(f"_ap_{_tipo_key}_cache", None)
+                    st.success(f"✅ {_ap_tipo_man} {_ap_data_man.strftime('%d/%m/%Y')} salvati")
+                    st.rerun()
+                except Exception as _e:
+                    st.error(str(_e))
+
+
+# ══════════════════════════════════════════════════════════════
+# TAB 7 — ARRIVI & PARTENZE
+# ══════════════════════════════════════════════════════════════
+with tab7:
+    st.markdown("### 🚛 Arrivi & Partenze")
+
+    # ── Carica dati da Supabase ────────────────────────────────
+    if "_ap_arr_cache" not in st.session_state:
+        with st.spinner("Caricamento arrivi..."):
+            st.session_state["_ap_arr_cache"] = _carica_storico_ap("arrivi")
+    if "_ap_par_cache" not in st.session_state:
+        with st.spinner("Caricamento partenze..."):
+            st.session_state["_ap_par_cache"] = _carica_storico_ap("partenze")
+
+    _arr_rows = _filtra_feriali_ap(st.session_state["_ap_arr_cache"])
+    _par_rows = _filtra_feriali_ap(st.session_state["_ap_par_cache"])
+
+    # Pulsante aggiorna
+    _ap_h1, _ap_h2 = st.columns([7, 1])
+    with _ap_h2:
+        if st.button("🔄 Aggiorna", key="btn_refresh_ap"):
+            st.session_state.pop("_ap_arr_cache", None)
+            st.session_state.pop("_ap_par_cache", None)
+            st.rerun()
+
+    # ── KPI cards ─────────────────────────────────────────────
+    _ap_k1, _ap_k2, _ap_k3, _ap_k4 = st.columns(4)
+
+    _ult_arr = sorted(_arr_rows, key=lambda r: r["data"], reverse=True)[0] if _arr_rows else None
+    _ult_par = sorted(_par_rows, key=lambda r: r["data"], reverse=True)[0] if _par_rows else None
+
+    with _ap_k1:
+        _v = _ult_arr["val1"] if _ult_arr else "—"
+        _d = datetime.strptime(_ult_arr["data"], "%Y-%m-%d").strftime("%d/%m") if _ult_arr else ""
+        kpi_card(f"Arrivi Validi ({_d})", fmt_n(_v) if isinstance(_v, int) else _v, "#14b8a6")
+    with _ap_k2:
+        _v = _ult_arr["val2"] if _ult_arr else "—"
+        kpi_card(f"Affidate ({_d})", fmt_n(_v) if isinstance(_v, int) else _v, "#3b82f6")
+    with _ap_k3:
+        _v = _ult_par["val1"] if _ult_par else "—"
+        _dp = datetime.strptime(_ult_par["data"], "%Y-%m-%d").strftime("%d/%m") if _ult_par else ""
+        kpi_card(f"PPP LdV ({_dp})", fmt_n(_v) if isinstance(_v, int) else _v, "#f59e0b")
+    with _ap_k4:
+        _v = _ult_par["val2"] if _ult_par else "—"
+        kpi_card(f"Colli ({_dp})", fmt_n(_v) if isinstance(_v, int) else _v, "#a855f7")
+
+    st.markdown("---")
+
+    # ── Due colonne: Arrivi | Partenze ────────────────────────
+    _col_arr, _col_par = st.columns(2)
+
+    # ── ARRIVI ────────────────────────────────────────────────
+    with _col_arr:
+        st.markdown("#### 📥 Arrivi")
+        if not _arr_rows:
+            st.info("Nessun dato arrivi. Importa un file o inserisci manualmente.")
+        else:
+            df_arr = pd.DataFrame(sorted(_arr_rows, key=lambda r: r["data"]))
+            df_arr["_dt"] = pd.to_datetime(df_arr["data"])
+            df_arr = df_arr.rename(columns={"val1": "Arrivi Validi", "val2": "Affidate"})
+
+            fig_arr = go.Figure()
+            fig_arr.add_trace(go.Scatter(
+                x=df_arr["_dt"],
+                y=df_arr["Arrivi Validi"],
+                name="Arrivi Validi",
+                mode="lines+markers",
+                line=dict(color="#14b8a6", width=2),
+                fill="tozeroy",
+                fillcolor="rgba(20,184,166,0.12)",
+                marker=dict(size=6),
+            ))
+            fig_arr.add_trace(go.Scatter(
+                x=df_arr["_dt"],
+                y=df_arr["Affidate"],
+                name="Affidate",
+                mode="lines+markers",
+                line=dict(color="#3b82f6", width=2),
+                marker=dict(size=6),
+            ))
+            fig_arr.update_layout(
+                **LAYOUT_DARK,
+                height=300,
+                xaxis=dict(
+                    gridcolor="#2a3045",
+                    type="date",
+                    rangebreaks=[dict(bounds=["sat", "mon"])],
+                    tickformat="%d %b",
+                ),
+                yaxis=dict(gridcolor="#2a3045"),
+                legend=dict(orientation="h", y=-0.25, bgcolor="rgba(0,0,0,0)"),
+                margin=dict(l=0, r=0, t=20, b=0),
+            )
+            st.plotly_chart(fig_arr, use_container_width=True)
+
+            # Tabella
+            df_arr_tab = df_arr[["data", "Arrivi Validi", "Affidate", "nome_file"]].copy()
+            df_arr_tab = df_arr_tab.sort_values("data", ascending=False)
+            df_arr_tab["data"] = pd.to_datetime(df_arr_tab["data"]).dt.strftime("%d/%m/%Y")
+            df_arr_tab.rename(columns={"data": "Data", "nome_file": "File"}, inplace=True)
+            st.dataframe(df_arr_tab, use_container_width=True, hide_index=True)
+
+            _csv_arr = df_arr_tab.to_csv(index=False, sep=";").encode("utf-8-sig")
+            st.download_button("⬇ CSV Arrivi", data=_csv_arr,
+                               file_name="storico_arrivi.csv", mime="text/csv",
+                               key="dl_arr")
+
+    # ── PARTENZE ──────────────────────────────────────────────
+    with _col_par:
+        st.markdown("#### 📤 Partenze")
+        if not _par_rows:
+            st.info("Nessun dato partenze. Importa un file o inserisci manualmente.")
+        else:
+            df_par = pd.DataFrame(sorted(_par_rows, key=lambda r: r["data"]))
+            df_par["_dt"] = pd.to_datetime(df_par["data"])
+            df_par = df_par.rename(columns={"val1": "PPP LdV", "val2": "Colli"})
+
+            fig_par = go.Figure()
+            fig_par.add_trace(go.Scatter(
+                x=df_par["_dt"],
+                y=df_par["PPP LdV"],
+                name="PPP LdV",
+                mode="lines+markers",
+                line=dict(color="#f59e0b", width=2),
+                fill="tozeroy",
+                fillcolor="rgba(245,158,11,0.12)",
+                marker=dict(size=6),
+            ))
+            fig_par.add_trace(go.Scatter(
+                x=df_par["_dt"],
+                y=df_par["Colli"],
+                name="Colli",
+                mode="lines+markers",
+                line=dict(color="#a855f7", width=2),
+                marker=dict(size=6),
+            ))
+            fig_par.update_layout(
+                **LAYOUT_DARK,
+                height=300,
+                xaxis=dict(
+                    gridcolor="#2a3045",
+                    type="date",
+                    rangebreaks=[dict(bounds=["sat", "mon"])],
+                    tickformat="%d %b",
+                ),
+                yaxis=dict(gridcolor="#2a3045"),
+                legend=dict(orientation="h", y=-0.25, bgcolor="rgba(0,0,0,0)"),
+                margin=dict(l=0, r=0, t=20, b=0),
+            )
+            st.plotly_chart(fig_par, use_container_width=True)
+
+            # Tabella
+            df_par_tab = df_par[["data", "PPP LdV", "Colli", "nome_file"]].copy()
+            df_par_tab = df_par_tab.sort_values("data", ascending=False)
+            df_par_tab["data"] = pd.to_datetime(df_par_tab["data"]).dt.strftime("%d/%m/%Y")
+            df_par_tab.rename(columns={"data": "Data", "nome_file": "File"}, inplace=True)
+            st.dataframe(df_par_tab, use_container_width=True, hide_index=True)
+
+            _csv_par = df_par_tab.to_csv(index=False, sep=";").encode("utf-8-sig")
+            st.download_button("⬇ CSV Partenze", data=_csv_par,
+                               file_name="storico_partenze.csv", mime="text/csv",
+                               key="dl_par")
