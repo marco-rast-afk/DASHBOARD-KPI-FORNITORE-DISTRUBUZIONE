@@ -1748,7 +1748,7 @@ with tab7:
     # ── Due colonne: Arrivi | Partenze ────────────────────────
     _col_arr, _col_par = st.columns(2)
 
-    # ── ARRIVI ────────────────────────────────────────────────
+# ── ARRIVI ────────────────────────────────────────────────
     with _col_arr:
         st.markdown("#### 📥 Arrivi")
         if not _arr_rows:
@@ -1787,17 +1787,19 @@ with tab7:
                     tickformat="%d %b",
                 ),
                 yaxis=dict(gridcolor="#2a3045"),
-                margin=dict(l=0, r=0, t=20, b=0),
             )
+            # Sovrascrive il margine specifico mantenendo invariato LAYOUT_DARK
+            fig_arr.update_layout(margin=dict(l=0, r=0, t=20, b=0))
             st.plotly_chart(fig_arr, use_container_width=True)
 
-            # Tabella
+            # Tabella di riepilogo
             df_arr_tab = df_arr[["data", "Arrivi Validi", "Affidate", "nome_file"]].copy()
             df_arr_tab = df_arr_tab.sort_values("data", ascending=False)
             df_arr_tab["data"] = pd.to_datetime(df_arr_tab["data"]).dt.strftime("%d/%m/%Y")
             df_arr_tab.rename(columns={"data": "Data", "nome_file": "File"}, inplace=True)
             st.dataframe(df_arr_tab, use_container_width=True, hide_index=True)
 
+            # Esportazione dataset
             _csv_arr = df_arr_tab.to_csv(index=False, sep=";").encode("utf-8-sig")
             st.download_button("⬇ CSV Arrivi", data=_csv_arr,
                                file_name="storico_arrivi.csv", mime="text/csv",
@@ -1842,17 +1844,19 @@ with tab7:
                     tickformat="%d %b",
                 ),
                 yaxis=dict(gridcolor="#2a3045"),
-                margin=dict(l=0, r=0, t=20, b=0),
             )
+            # Sovrascrive il margine specifico mantenendo invariato LAYOUT_DARK
+            fig_par.update_layout(margin=dict(l=0, r=0, t=20, b=0))
             st.plotly_chart(fig_par, use_container_width=True)
 
-            # Tabella
+            # Tabella di riepilogo
             df_par_tab = df_par[["data", "PPP LdV", "Colli", "nome_file"]].copy()
             df_par_tab = df_par_tab.sort_values("data", ascending=False)
             df_par_tab["data"] = pd.to_datetime(df_par_tab["data"]).dt.strftime("%d/%m/%Y")
             df_par_tab.rename(columns={"data": "Data", "nome_file": "File"}, inplace=True)
             st.dataframe(df_par_tab, use_container_width=True, hide_index=True)
 
+            # CORRETTO: Corretta l'indentazione e inserita la logica di scaricamento delle partenze
             _csv_par = df_par_tab.to_csv(index=False, sep=";").encode("utf-8-sig")
             st.download_button("⬇ CSV Partenze", data=_csv_par,
                                file_name="storico_partenze.csv", mime="text/csv",
